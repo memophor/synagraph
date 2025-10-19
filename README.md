@@ -46,7 +46,7 @@ curl http://localhost:8080/ready
 
 ### Smoke test (gRPC)
 ```bash
-evans --proto proto/synagraph.proto --host localhost --port 50051
+evans --proto proto/synagraph.proto --host localhost --port 50051 repl
 ```
 
 ### Telemetry
