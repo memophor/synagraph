@@ -18,6 +18,8 @@ SynaGraph is the open-source synaptic graph engine that powers the Memophor Know
 - [Developer Setup](docs/development.md) – toolchain install, environment prep, and smoke tests.
 - [Testing Strategy](docs/testing.md) – testing layers, commands, and upcoming coverage tasks.
 - [gRPC CLI Quickstart](docs/grpc_cli.md) – step-by-step guide for driving the API with Evans.
+- [Storage Architecture Plan](docs/storage_plan.md) – Phase 1 persistence design and repository interfaces.
+- [Observability Roadmap](docs/observability.md) – planned metrics, tracing, and readiness enhancements.
 
 ### Dev Workflows
 

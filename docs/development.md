@@ -36,7 +36,11 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
 All commands should complete without warnings or failures. If `protoc` is missing, install it and rerun the checks.
-Refer to the [Testing Strategy](testing.md) for deeper coverage plans and additional targets as the suite evolves.
+Refer to the [Testing Strategy](testing.md) for deeper coverage plans as the suite evolves.
+
+For upcoming persistence work, consult the [Storage Architecture Plan](storage_plan.md) to understand how repositories and migrations will integrate with the runtime.
+
+As observability features arrive, track logging/metrics changes in the [Observability Roadmap](observability.md).
 
 ## 4. Running the Services
 
