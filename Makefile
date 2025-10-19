@@ -22,3 +22,9 @@ all: fmt lint test
 
 ci:
 	cargo fmt --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test
+
+migrate:
+	cargo sqlx migrate run
+
+prepare:
+	cargo sqlx prepare -- --all-targets --all-features

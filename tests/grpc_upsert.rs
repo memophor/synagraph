@@ -2,6 +2,7 @@
 // Integration test: spins up the gRPC server and exercises UpsertNode through a tonic client.
 
 use std::net::{SocketAddr, TcpListener};
+use std::sync::Arc;
 use std::time::Duration;
 
 use synagraph::config::AppConfig;
@@ -21,14 +22,17 @@ async fn start_server() -> SocketAddr {
     drop(listener);
 
     let grpc_addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], port));
+    let default_tenant = Uuid::new_v4();
     let cfg = AppConfig {
         http_addr: "127.0.0.1:0".parse().unwrap(),
         grpc_addr,
         service_name: "synagraph-test".into(),
         version: "0.1.0-test".into(),
+        database_url: None,
+        default_tenant_id: default_tenant,
     };
 
-    let repo: NodeRepositoryHandle = std::sync::Arc::new(InMemoryNodeRepository::new());
+    let repo: NodeRepositoryHandle = Arc::new(InMemoryNodeRepository::new());
 
     tokio::spawn(async move {
         server::run(cfg, repo).await.expect("server exits cleanly");

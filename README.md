@@ -30,6 +30,8 @@ Common commands are captured in the `Makefile`:
 make fmt   # cargo fmt
 make lint  # cargo clippy -- -D warnings
 make test  # cargo test
+make migrate # cargo sqlx migrate run
+make prepare # cargo sqlx prepare -- --all-targets --all-features
 ```
 
 ### CI Status
@@ -41,6 +43,8 @@ Pull requests must pass the GitHub Actions workflow (`.github/workflows/ci.yml`)
 cargo run
 ```
 This will start the HTTP server on `0.0.0.0:8080` and the gRPC server on `0.0.0.0:50051`.
+Provide `DATABASE_URL` to enable the PostgreSQL repository; without it, the service falls back to an in-memory store.
+Run `docker compose up` to start the local Postgres (pgvector) + Redis stack, then apply migrations with `cargo sqlx migrate run` before `cargo run`.
 
 ### Smoke test (HTTP)
 ```bash

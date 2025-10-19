@@ -5,6 +5,7 @@ use std::env;
 use std::net::SocketAddr;
 
 use anyhow::{Context, Result};
+use uuid::Uuid;
 
 #[derive(Clone, Debug)]
 pub struct AppConfig {
@@ -12,6 +13,8 @@ pub struct AppConfig {
     pub grpc_addr: SocketAddr,
     pub service_name: String,
     pub version: String,
+    pub database_url: Option<String>,
+    pub default_tenant_id: Uuid,
 }
 
 impl AppConfig {
@@ -29,12 +32,19 @@ impl AppConfig {
         let service_name = env::var("SERVICE_NAME").unwrap_or_else(|_| "synagraph".into());
         let version =
             env::var("SERVICE_VERSION").unwrap_or_else(|_| env!("CARGO_PKG_VERSION").into());
+        let database_url = env::var("DATABASE_URL").ok();
+        let default_tenant_id = env::var("DEFAULT_TENANT_ID")
+            .ok()
+            .and_then(|value| Uuid::parse_str(&value).ok())
+            .unwrap_or_else(Uuid::nil);
 
         Ok(Self {
             http_addr,
             grpc_addr,
             service_name,
             version,
+            database_url,
+            default_tenant_id,
         })
     }
 }

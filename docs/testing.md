@@ -15,6 +15,7 @@ This document outlines the multi-layer testing approach for SynaGraph. It comple
    - Spin up in-process servers using `tokio::spawn` and hit them with `reqwest`/`tonic` clients.
    - Validate readiness/health endpoints, gRPC round trips, error codes.
    - First example: `tests/grpc_upsert.rs` exercises the `UpsertNode` flow via a real tonic client (`cargo test --test grpc_upsert`).
+   - Postgres-backed coverage: `tests/postgres_nodes.rs` validates tenant RLS and repository behaviour (`DATABASE_URL` must point at a pgvector-enabled Postgres).
 
 3. **Contract/API tests**
    - Scope: ensure protobuf-defined behaviour remains backwards compatible.
@@ -34,6 +35,7 @@ This document outlines the multi-layer testing approach for SynaGraph. It comple
 |---------------------|-------------------------------------------------------------------------| 
 | Unit tests          | `cargo test`                                                            |
 | Integration suite   | `cargo test --test <name>` (once tests land in `tests/`)                |
+| Postgres repo test  | `cargo test --test postgres_nodes` (requires running Postgres + migrations) |
 | Linting             | `cargo clippy --all-targets --all-features -- -D warnings`              |
 | Formatting          | `cargo fmt` or `make fmt`                                               |
 | gRPC contract check | `scripts/grpc_smoke.sh` (planned) or manual `evans`/`grpcurl` commands  |

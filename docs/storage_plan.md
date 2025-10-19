@@ -41,7 +41,7 @@ Edges will land in a follow-on table (`knowledge_edges`) once relationships are 
 
 ## Repository Interfaces (Rust)
 
-Define traits capturing storage behaviour to aid testing:
+Define traits capturing storage behaviour to aid testing (implemented today by an in-memory adapter and a PostgreSQL-backed repository selected at runtime when `DATABASE_URL` is provided). The schema below ships in `migrations/001_init_synagraph.sql` with RLS, edge tables, a normalized embeddings table, and an outbox for event fanout:
 
 ```rust
 #[async_trait]

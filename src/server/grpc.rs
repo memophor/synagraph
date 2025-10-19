@@ -11,7 +11,7 @@ use crate::config::AppConfig;
 use crate::domain::node::KnowledgeNode;
 use crate::pb::synagraph::v1::graph_service_server::{GraphService, GraphServiceServer};
 use crate::pb::synagraph::v1::{PingRequest, PingResponse, UpsertNodeRequest, UpsertNodeResponse};
-use crate::repository::NodeRepositoryHandle;
+use crate::repository::{NodeRepositoryHandle, UpsertOutcome};
 
 pub async fn serve(cfg: AppConfig, node_repo: NodeRepositoryHandle) -> Result<()> {
     let addr: SocketAddr = cfg.grpc_addr;
@@ -31,6 +31,7 @@ struct GraphServiceImpl {
     service_name: String,
     version: String,
     node_repo: NodeRepositoryHandle,
+    default_tenant: Uuid,
 }
 
 impl GraphServiceImpl {
@@ -39,6 +40,7 @@ impl GraphServiceImpl {
             service_name: cfg.service_name,
             version: cfg.version,
             node_repo,
+            default_tenant: cfg.default_tenant_id,
         }
     }
 }
@@ -68,31 +70,28 @@ impl GraphService for GraphServiceImpl {
         tracing::debug!(service = %self.service_name, kind = %payload.kind, "processing upsert_node");
         let json_payload = parse_payload(&payload.payload_json)?;
 
-        let (node_id, created) = if payload.node_id.is_empty() {
-            (Uuid::new_v4(), true)
+        let tenant_id = self.default_tenant;
+        let mut node = KnowledgeNode::new(tenant_id, payload.kind, json_payload);
+        let node_id = if payload.node_id.is_empty() {
+            node.id
         } else {
-            (
-                Uuid::parse_str(&payload.node_id)
-                    .map_err(|_| Status::invalid_argument("node_id must be a UUID"))?,
-                false,
-            )
+            Uuid::parse_str(&payload.node_id)
+                .map_err(|_| Status::invalid_argument("node_id must be a UUID"))?
         };
+        node.id = node_id;
 
-        let node = KnowledgeNode {
-            id: node_id,
-            kind: payload.kind,
-            payload: json_payload,
-            created,
-        };
-
-        let outcome = self.node_repo.upsert(node).await.map_err(|err| {
-            tracing::error!(?err, "node upsert failed");
-            Status::internal("failed to persist node")
-        })?;
+        let outcome = self
+            .node_repo
+            .upsert(tenant_id, node)
+            .await
+            .map_err(|err| {
+                tracing::error!(?err, "node upsert failed");
+                Status::internal("failed to persist node")
+            })?;
 
         let response = UpsertNodeResponse {
-            node_id: outcome.node.id.to_string(),
-            created: outcome.created,
+            node_id: node_id.to_string(),
+            created: matches!(outcome, UpsertOutcome::Created),
         };
 
         Ok(Response::new(response))
@@ -140,15 +139,18 @@ mod tests {
 
     #[tokio::test]
     async fn upsert_node_persists_and_updates_records() {
+        let tenant = Uuid::new_v4();
         let cfg = AppConfig {
             http_addr: "127.0.0.1:0".parse().unwrap(),
             grpc_addr: "127.0.0.1:0".parse().unwrap(),
             service_name: "synagraph".into(),
             version: "0.1.0-test".into(),
+            database_url: None,
+            default_tenant_id: tenant,
         };
 
         let repo = Arc::new(InMemoryNodeRepository::new());
-        let service = GraphServiceImpl::new(cfg, repo.clone());
+        let service = GraphServiceImpl::new(cfg.clone(), repo.clone());
 
         let response = service
             .upsert_node(Request::new(UpsertNodeRequest {
@@ -163,7 +165,7 @@ mod tests {
         assert!(response.created);
         let node_id = Uuid::parse_str(&response.node_id).expect("valid uuid");
 
-        let stored = repo.get(node_id).await.expect("get succeeds");
+        let stored = repo.get(tenant, node_id).await.expect("get succeeds");
         assert!(stored.is_some());
 
         let response_update = service
@@ -178,10 +180,10 @@ mod tests {
 
         assert!(!response_update.created);
         let stored_updated = repo
-            .get(node_id)
+            .get(tenant, node_id)
             .await
             .expect("get succeeds")
             .expect("node exists");
-        assert_eq!(stored_updated.payload["title"], "updated");
+        assert_eq!(stored_updated.payload_json["title"], "updated");
     }
 }

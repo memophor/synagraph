@@ -18,6 +18,10 @@ For the product and architectural backdrop, read the [Vision & Platform Principl
    - Windows (chocolatey): `choco install protoc`
    - Or download a prebuilt release from <https://github.com/protocolbuffers/protobuf/releases>.
 4. Optional, but recommended: install [`just`](https://github.com/casey/just) or `make` if you prefer the provided task runner.
+5. Install [`sqlx-cli`](https://github.com/launchbadge/sqlx/tree/master/sqlx-cli) for migrations:
+   ```bash
+   cargo install sqlx-cli --no-default-features --features postgres,runtime-tokio-rustls
+   ```
 
 ## 2. Clone and Toolchain Sync
 
@@ -36,9 +40,11 @@ Run the baseline commands to confirm the environment is ready:
 cargo fmt
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
+# optional: cargo sqlx prepare -- --all-targets --all-features (keeps SQL checked in CI)
 ```
 All commands should complete without warnings or failures. If `protoc` is missing, install it and rerun the checks.
 Refer to the [Testing Strategy](testing.md) for deeper coverage plans as the suite evolves.
+To exercise the Postgres repository locally, bring up `docker compose up` and run `cargo test --test postgres_nodes` (skips automatically if `DATABASE_URL` is unset).
 
 For upcoming persistence work, consult the [Storage Architecture Plan](storage_plan.md) to understand how repositories and migrations will integrate with the runtime.
 
@@ -61,6 +67,8 @@ evans --proto proto/synagraph.proto --host localhost --port 50051 repl
 ```
 
 Inside the Evans REPL, select the package/service and invoke RPCs as documented in the [gRPC CLI Quickstart](grpc_cli.md).
+If `DATABASE_URL` is unset, the service uses the in-memory repository; setting it switches runtime persistence to PostgreSQL.
+To bring up a local Postgres + Redis stack, run `docker compose up` from the project root and apply migrations with `cargo sqlx migrate run` (requires `DATABASE_URL`).
 
 ## 5. Environment Configuration
 
@@ -73,6 +81,8 @@ Default bind addresses and metadata are controlled via environment variables:
 | `SERVICE_NAME`  | Service identifier in logs     | `synagraph`        |
 | `SERVICE_VERSION` | Service version override     | crate package ver. |
 | `RUST_LOG`        | Tracing verbosity             | `synagraph=info,tower_http=info` |
+| `DATABASE_URL`    | Optional PostgreSQL connection string | unset (in-memory store) |
+| `DEFAULT_TENANT_ID` | Tenant UUID used when auth context is absent | `00000000-0000-0000-0000-000000000000` |
 
 Create a `.env` at the project root to customize these when running locally.
 

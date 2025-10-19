@@ -33,7 +33,7 @@ Initial implementation can rely on `metrics` crate + `prometheus` exporter; eval
 ## Health & Readiness
 
 - Extend `/ready` to check downstreams:
-  - Database connectivity (simple `SELECT 1`).
+  - Database connectivity (simple `SELECT 1`) when the PostgreSQL repository is active; in-memory mode reports ready immediately.
   - Vector index availability.
   - Background worker heartbeats (once implemented).
 - Return JSON payload listing component statuses to aid debugging.
@@ -48,6 +48,5 @@ Initial implementation can rely on `metrics` crate + `prometheus` exporter; eval
 
 - [ ] Add `metrics` crate and expose Prometheus endpoint behind feature flag.
 - [ ] Instrument HTTP/gRPC handlers with latency counters.
-- [ ] Implement readiness checks for database (stub returning `degraded` until storage lands).
+- [x] Implement readiness checks for database (currently runs `SELECT 1` when PostgreSQL is configured; defaults to ready for in-memory mode).
 - [ ] Evaluate `opentelemetry-rust` integration for distributed tracing.
-
