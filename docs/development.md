@@ -50,8 +50,10 @@ Smoke-test the endpoints in another shell:
 ```bash
 curl http://localhost:8080/health
 curl http://localhost:8080/ready
-evans --proto proto/synagraph.proto --host localhost --port 50051 call synagraph.v1.GraphService.Ping
+evans --proto proto/synagraph.proto --host localhost --port 50051 repl
 ```
+
+Inside the Evans REPL, select the package/service and invoke RPCs as documented in the [gRPC CLI Quickstart](grpc_cli.md).
 
 ## 5. Environment Configuration
 

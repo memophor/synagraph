@@ -48,6 +48,7 @@ curl http://localhost:8080/ready
 ```bash
 evans --proto proto/synagraph.proto --host localhost --port 50051 repl
 ```
+Then follow the steps in the [gRPC CLI Quickstart](docs/grpc_cli.md) to select the package/service and invoke RPCs.
 
 ### Telemetry
 
