@@ -154,3 +154,38 @@ impl BusSubscription {
 }
 
 pub type NodeRepositoryHandle = Arc<dyn NodeRepository>;
+pub type EdgeRepositoryHandle = Arc<dyn EdgeRepository>;
+pub type EmbeddingRepositoryHandle = Arc<dyn EmbeddingRepository>;
+pub type OutboxRepositoryHandle = Arc<dyn OutboxRepository>;
+pub type ArtifactCacheHandle = Arc<dyn ArtifactCache>;
+pub type EventBusHandle = Arc<dyn EventBus>;
+
+#[derive(Clone)]
+pub struct RepositoryBundle {
+    pub nodes: NodeRepositoryHandle,
+    pub edges: EdgeRepositoryHandle,
+    pub embeddings: EmbeddingRepositoryHandle,
+    pub outbox: OutboxRepositoryHandle,
+    pub cache: ArtifactCacheHandle,
+    pub bus: EventBusHandle,
+}
+
+impl RepositoryBundle {
+    pub fn new(
+        nodes: NodeRepositoryHandle,
+        edges: EdgeRepositoryHandle,
+        embeddings: EmbeddingRepositoryHandle,
+        outbox: OutboxRepositoryHandle,
+        cache: ArtifactCacheHandle,
+        bus: EventBusHandle,
+    ) -> Self {
+        Self {
+            nodes,
+            edges,
+            embeddings,
+            outbox,
+            cache,
+            bus,
+        }
+    }
+}

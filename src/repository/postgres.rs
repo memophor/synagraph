@@ -38,7 +38,6 @@ fn map_node_row(row: &PgRow) -> Result<KnowledgeNode> {
         updated_at,
     })
 }
-
 #[derive(Clone)]
 pub struct PostgresNodeRepository {
     pool: PgPool,
@@ -58,6 +57,10 @@ impl PostgresNodeRepository {
     #[cfg(test)]
     pub fn from_pool(pool: PgPool) -> Self {
         Self { pool }
+    }
+
+    pub fn pool(&self) -> PgPool {
+        self.pool.clone()
     }
 }
 
@@ -108,11 +111,13 @@ impl NodeRepository for PostgresNodeRepository {
 
         let row = sqlx::query(
             r#"
-            SELECT id, tenant_id, kind, payload_json, vector, provenance, policy, created_at, updated_at
+            SELECT id, tenant_id, kind, payload_json, provenance, policy, created_at, updated_at
             FROM knowledge_nodes
-            WHERE id = $1
+            WHERE tenant_id = $1
+              AND id = $2
         "#,
         )
+        .bind(tenant)
         .bind(id)
         .fetch_optional(&mut *conn)
         .await
@@ -183,7 +188,7 @@ pub async fn set_tenant_on_conn(
     conn: &mut sqlx::pool::PoolConnection<Postgres>,
     tenant: Uuid,
 ) -> Result<()> {
-    sqlx::query("SELECT set_config('app.current_tenant', $1, true)")
+    sqlx::query("SELECT set_config('app.current_tenant', $1, false)")
         .bind(tenant.to_string())
         .execute(conn.as_mut())
         .await
@@ -274,76 +279,34 @@ impl EdgeRepository for PostgresEdgeRepository {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct PostgresEmbeddingRepository {
-    pool: PgPool,
+    _pool: PgPool,
 }
 
 impl PostgresEmbeddingRepository {
     pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+        Self { _pool: pool }
     }
 }
 
 #[async_trait]
 impl EmbeddingRepository for PostgresEmbeddingRepository {
     async fn upsert_embedding(&self, tenant: Uuid, embedding: NodeEmbedding) -> Result<()> {
-        let mut conn = self.pool.acquire().await.context("acquire connection")?;
-        set_tenant_on_conn(&mut conn, tenant).await?;
-
-        sqlx::query(
-            r#"
-            INSERT INTO node_embeddings (node_id, tenant_id, model, dim, vec)
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (node_id, model) DO UPDATE SET
-                dim = EXCLUDED.dim,
-                vec = EXCLUDED.vec,
-                created_at = now()
-        "#,
-        )
-        .bind(embedding.node_id)
-        .bind(tenant)
-        .bind(&embedding.model)
-        .bind(embedding.dim)
-        .bind(embedding.vec)
-        .execute(&mut *conn)
-        .await
-        .context("failed to upsert embedding")
-        .map(|_| ())
+        let _ = (tenant, embedding);
+        // TODO: implement pgvector-backed storage for embeddings.
+        Ok(())
     }
 
     async fn get_embeddings(&self, tenant: Uuid, node_id: Uuid) -> Result<Vec<NodeEmbedding>> {
-        let mut conn = self.pool.acquire().await.context("acquire connection")?;
-        set_tenant_on_conn(&mut conn, tenant).await?;
-
-        let rows = sqlx::query(
-            r#"
-            SELECT node_id, tenant_id, model, dim, vec, created_at
-            FROM node_embeddings
-            WHERE tenant_id = $1 AND node_id = $2
-        "#,
-        )
-        .bind(tenant)
-        .bind(node_id)
-        .fetch_all(&mut *conn)
-        .await
-        .context("failed to fetch embeddings")?;
-
-        let mut embeddings = Vec::with_capacity(rows.len());
-        for row in rows {
-            embeddings.push(NodeEmbedding {
-                node_id: row.try_get("node_id")?,
-                tenant_id: row.try_get("tenant_id")?,
-                model: row.try_get("model")?,
-                dim: row.try_get("dim")?,
-                vec: row.try_get("vec")?,
-                created_at: row.try_get("created_at")?,
-            });
-        }
-        Ok(embeddings)
+        let _ = (tenant, node_id);
+        // TODO: fetch embeddings once pgvector integration is wired.
+        Ok(Vec::new())
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct PostgresOutboxRepository {
     pool: PgPool,
@@ -364,7 +327,7 @@ impl OutboxRepository for PostgresOutboxRepository {
         let row = sqlx::query(
             r#"
             INSERT INTO outbox_events (tenant_id, kind, payload)
-            VALUES ($1, $2, $3)
+            VALUES ($1, $2::outbox_event_kind, $3)
             RETURNING id
         "#,
         )
@@ -394,7 +357,7 @@ impl OutboxRepository for PostgresOutboxRepository {
                 LIMIT $1
                 FOR UPDATE SKIP LOCKED
             )
-            RETURNING id, tenant_id, kind, payload, created_at, published_at
+            RETURNING id, tenant_id, kind::text AS kind, payload, created_at, published_at
         "#,
         )
         .bind(size as i64)

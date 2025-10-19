@@ -9,7 +9,7 @@ use serde::Serialize;
 use tokio::net::TcpListener;
 
 use crate::config::AppConfig;
-use crate::repository::NodeRepositoryHandle;
+use crate::repository::RepositoryBundle;
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -29,12 +29,12 @@ struct ReadyResponse {
 #[derive(Clone)]
 struct HttpState {
     cfg: AppConfig,
-    node_repo: NodeRepositoryHandle,
+    repos: RepositoryBundle,
 }
 
-pub async fn serve(cfg: AppConfig, node_repo: NodeRepositoryHandle) -> Result<()> {
+pub async fn serve(cfg: AppConfig, repos: RepositoryBundle) -> Result<()> {
     let addr: SocketAddr = cfg.http_addr;
-    let state = HttpState { cfg, node_repo };
+    let state = HttpState { cfg, repos };
     let app = Router::new()
         .route("/health", get(health_handler))
         .route("/ready", get(ready_handler))
@@ -61,8 +61,8 @@ async fn health_handler(State(state): State<HttpState>) -> Json<HealthResponse> 
 }
 
 async fn ready_handler(State(state): State<HttpState>) -> Json<ReadyResponse> {
-    let HttpState { cfg, node_repo } = state;
-    let storage_ok = match node_repo.health_check().await {
+    let HttpState { cfg, repos } = state;
+    let storage_ok = match repos.nodes.health_check().await {
         Ok(_) => true,
         Err(err) => {
             tracing::error!(?err, "repository health check failed");
@@ -84,7 +84,10 @@ mod tests {
     use std::sync::Arc;
     use uuid::Uuid;
 
-    use crate::repository::in_memory::InMemoryNodeRepository;
+    use crate::repository::in_memory::{
+        InMemoryBus, InMemoryCache, InMemoryEdgeRepository, InMemoryEmbeddingRepository,
+        InMemoryNodeRepository, InMemoryOutboxRepository,
+    };
 
     fn sample_config() -> AppConfig {
         AppConfig {
@@ -100,7 +103,14 @@ mod tests {
     fn sample_state() -> HttpState {
         HttpState {
             cfg: sample_config(),
-            node_repo: Arc::new(InMemoryNodeRepository::new()),
+            repos: RepositoryBundle::new(
+                Arc::new(InMemoryNodeRepository::new()),
+                Arc::new(InMemoryEdgeRepository::new()),
+                Arc::new(InMemoryEmbeddingRepository::new()),
+                Arc::new(InMemoryOutboxRepository::new()),
+                Arc::new(InMemoryCache::default()),
+                Arc::new(InMemoryBus::default()),
+            ),
         }
     }
 

@@ -5,8 +5,15 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use synagraph::config::AppConfig;
-use synagraph::repository::postgres::PostgresNodeRepository;
-use synagraph::repository::{self, NodeRepositoryHandle};
+use synagraph::repository::in_memory::{
+    InMemoryBus, InMemoryCache, InMemoryEdgeRepository, InMemoryEmbeddingRepository,
+    InMemoryNodeRepository, InMemoryOutboxRepository,
+};
+use synagraph::repository::postgres::{
+    PostgresEdgeRepository, PostgresEmbeddingRepository, PostgresNodeRepository,
+    PostgresOutboxRepository,
+};
+use synagraph::repository::RepositoryBundle;
 use synagraph::{server, telemetry};
 
 #[tokio::main]
@@ -16,19 +23,34 @@ async fn main() -> Result<()> {
 
     let cfg = AppConfig::from_env()?;
 
-    let node_repo: NodeRepositoryHandle = match cfg.database_url.clone() {
+    let repos = match cfg.database_url.clone() {
         Some(url) => {
-            tracing::info!("initializing postgres repository");
-            let repo = PostgresNodeRepository::connect(&url).await?;
-            Arc::new(repo)
+            tracing::info!("initializing postgres repositories");
+            let node_repo = PostgresNodeRepository::connect(&url).await?;
+            let pool = node_repo.pool();
+            RepositoryBundle::new(
+                Arc::new(node_repo),
+                Arc::new(PostgresEdgeRepository::new(pool.clone())),
+                Arc::new(PostgresEmbeddingRepository::new(pool.clone())),
+                Arc::new(PostgresOutboxRepository::new(pool)),
+                Arc::new(InMemoryCache::default()),
+                Arc::new(InMemoryBus::default()),
+            )
         }
         None => {
-            tracing::info!("initializing in-memory repository");
-            Arc::new(repository::in_memory::InMemoryNodeRepository::new())
+            tracing::info!("initializing in-memory repositories");
+            RepositoryBundle::new(
+                Arc::new(InMemoryNodeRepository::new()),
+                Arc::new(InMemoryEdgeRepository::new()),
+                Arc::new(InMemoryEmbeddingRepository::new()),
+                Arc::new(InMemoryOutboxRepository::new()),
+                Arc::new(InMemoryCache::default()),
+                Arc::new(InMemoryBus::default()),
+            )
         }
     };
 
     tracing::info!(service = %cfg.service_name, version = %cfg.version, "starting synagraph");
 
-    server::run(cfg, node_repo).await
+    server::run(cfg, repos).await
 }

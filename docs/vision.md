@@ -25,6 +25,7 @@ We do **not** plan to invent a bespoke storage engine. Existing technologies alr
 - **Vector search** – lean on `pgvector` initially; graduate to Qdrant/Weaviate/Milvus only when workloads demand specialized ANN performance.
 - **Temporal & Policy behaviour** – implement in the service layer via scheduled jobs, score recalculations, and policy interceptors. Storage just needs indexed fields.
 - **Event propagation** – optional Redis/NATS/Kafka for streaming updates; not a Phase 1 requirement.
+- **Edge cache** – keep cache/event bus traits generic so Redis works today and Scedge Core PoPs can plug in as the production edge tier.
 
 If scale or workload characteristics ever exceed what commodity databases deliver, we will collect benchmarks before evaluating purpose-built or custom engines.
 
@@ -39,6 +40,6 @@ If scale or workload characteristics ever exceed what commodity databases delive
 
 - Rich policy language for row-/edge-level access decisions.
 - Knowledge “activation” pipeline that promotes content into downstream systems based on signals.
-- Collaboration with the open-source community around connectors, schema recipes, and governance playbooks.
+- Collaboration with the open-source community around connectors, schema recipes, governance playbooks, and Scedge cache adapters.
 
 Stay focused on delivering value through the graph APIs and intelligence layers; revisit foundational choices only when the data tells us we have to.

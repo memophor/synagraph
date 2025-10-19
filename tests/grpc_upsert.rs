@@ -8,8 +8,11 @@ use std::time::Duration;
 use synagraph::config::AppConfig;
 use synagraph::pb::synagraph::v1::graph_service_client::GraphServiceClient;
 use synagraph::pb::synagraph::v1::UpsertNodeRequest;
-use synagraph::repository::in_memory::InMemoryNodeRepository;
-use synagraph::repository::NodeRepositoryHandle;
+use synagraph::repository::in_memory::{
+    InMemoryBus, InMemoryCache, InMemoryEdgeRepository, InMemoryEmbeddingRepository,
+    InMemoryNodeRepository, InMemoryOutboxRepository,
+};
+use synagraph::repository::RepositoryBundle;
 use synagraph::server;
 use tokio::net::TcpStream;
 use tokio::time::sleep;
@@ -32,10 +35,17 @@ async fn start_server() -> SocketAddr {
         default_tenant_id: default_tenant,
     };
 
-    let repo: NodeRepositoryHandle = Arc::new(InMemoryNodeRepository::new());
+    let repos = RepositoryBundle::new(
+        Arc::new(InMemoryNodeRepository::new()),
+        Arc::new(InMemoryEdgeRepository::new()),
+        Arc::new(InMemoryEmbeddingRepository::new()),
+        Arc::new(InMemoryOutboxRepository::new()),
+        Arc::new(InMemoryCache::default()),
+        Arc::new(InMemoryBus::default()),
+    );
 
     tokio::spawn(async move {
-        server::run(cfg, repo).await.expect("server exits cleanly");
+        server::run(cfg, repos).await.expect("server exits cleanly");
     });
 
     // Poll until the server is ready to accept connections or timeout.

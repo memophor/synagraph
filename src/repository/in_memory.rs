@@ -1,7 +1,7 @@
 // SynaGraph is open-source under the Apache License 2.0; see LICENSE for usage and contributions.
 // Simple in-memory repository used for early development and testing flows.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -11,7 +11,10 @@ use uuid::Uuid;
 
 use crate::domain::node::KnowledgeNode;
 
-use super::{NodeRepository, UpsertOutcome};
+use super::{
+    ArtifactCache, BusSubscription, EdgeRepository, EmbeddingRepository, EventBus, KnowledgeEdge,
+    NodeEmbedding, NodeRepository, OutboxEvent, OutboxKind, OutboxRepository, UpsertOutcome,
+};
 
 #[derive(Default)]
 pub struct InMemoryNodeRepository {
@@ -130,6 +133,188 @@ impl NodeRepository for InMemoryNodeRepository {
 
     async fn health_check(&self) -> Result<()> {
         Ok(())
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Default)]
+pub struct InMemoryEdgeRepository {
+    edges: RwLock<HashMap<Uuid, Vec<(Uuid, KnowledgeEdge)>>>,
+}
+
+impl InMemoryEdgeRepository {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[async_trait]
+impl EdgeRepository for InMemoryEdgeRepository {
+    async fn link(
+        &self,
+        tenant: Uuid,
+        src: Uuid,
+        dst: Uuid,
+        rel: &str,
+        weight: f32,
+        props: Option<serde_json::Value>,
+    ) -> Result<()> {
+        let mut guard = self.edges.write().await;
+        let list = guard.entry(tenant).or_insert_with(Vec::new);
+        list.push((
+            src,
+            KnowledgeEdge {
+                id: Uuid::new_v4(),
+                tenant_id: tenant,
+                src,
+                dst,
+                rel: rel.to_string(),
+                weight,
+                props,
+                created_at: Utc::now(),
+            },
+        ));
+        Ok(())
+    }
+
+    async fn neighbors(
+        &self,
+        tenant: Uuid,
+        id: Uuid,
+        rel: Option<&str>,
+        _hops: u8,
+        limit: usize,
+    ) -> Result<Vec<KnowledgeNode>> {
+        let guard = self.edges.read().await;
+        let Some(edges) = guard.get(&tenant) else {
+            return Ok(Vec::new());
+        };
+
+        let nodes: Vec<KnowledgeNode> = edges
+            .iter()
+            .filter(|(src, edge)| *src == id && rel.map(|r| r == edge.rel).unwrap_or(true))
+            .take(limit)
+            .map(|(_, edge)| {
+                KnowledgeNode::new(
+                    tenant,
+                    edge.rel.clone(),
+                    serde_json::json!({ "target": edge.dst }),
+                )
+            })
+            .collect();
+
+        Ok(nodes)
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Default)]
+pub struct InMemoryEmbeddingRepository;
+
+impl InMemoryEmbeddingRepository {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[async_trait]
+impl EmbeddingRepository for InMemoryEmbeddingRepository {
+    async fn upsert_embedding(&self, _tenant: Uuid, _embedding: NodeEmbedding) -> Result<()> {
+        Ok(())
+    }
+
+    async fn get_embeddings(&self, _tenant: Uuid, _node_id: Uuid) -> Result<Vec<NodeEmbedding>> {
+        Ok(Vec::new())
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Default)]
+pub struct InMemoryOutboxRepository {
+    events: RwLock<VecDeque<OutboxEvent>>,
+}
+
+impl InMemoryOutboxRepository {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[async_trait]
+impl OutboxRepository for InMemoryOutboxRepository {
+    async fn enqueue(
+        &self,
+        tenant: Uuid,
+        kind: OutboxKind,
+        payload: serde_json::Value,
+    ) -> Result<i64> {
+        let mut guard = self.events.write().await;
+        let id = guard.len() as i64 + 1;
+        guard.push_back(OutboxEvent {
+            id,
+            tenant_id: tenant,
+            kind,
+            payload,
+            created_at: Utc::now(),
+            published_at: None,
+        });
+        Ok(id)
+    }
+
+    async fn claim_batch(&self, size: usize) -> Result<Vec<OutboxEvent>> {
+        let mut guard = self.events.write().await;
+        let mut events = Vec::new();
+        for _ in 0..size.min(guard.len()) {
+            if let Some(mut event) = guard.pop_front() {
+                event.published_at = Some(Utc::now());
+                events.push(event);
+            }
+        }
+        Ok(events)
+    }
+
+    async fn mark_published(&self, _ids: &[i64]) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Default)]
+pub struct InMemoryCache;
+
+#[async_trait]
+impl ArtifactCache for InMemoryCache {
+    async fn get(&self, _tenant: Uuid, _key: &str) -> Result<Option<serde_json::Value>> {
+        Ok(None)
+    }
+
+    async fn set(
+        &self,
+        _tenant: Uuid,
+        _key: &str,
+        _value: &serde_json::Value,
+        _ttl_sec: u64,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    async fn purge(&self, _tenant: Uuid, _key: &str) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Default)]
+pub struct InMemoryBus;
+
+#[async_trait]
+impl EventBus for InMemoryBus {
+    async fn publish(&self, _topic: &str, _payload: &serde_json::Value) -> Result<()> {
+        Ok(())
+    }
+
+    async fn subscribe(&self, _topic: &str) -> Result<BusSubscription> {
+        Ok(BusSubscription)
     }
 }
 

@@ -46,14 +46,25 @@ Define traits capturing storage behaviour to aid testing (implemented today by a
 ```rust
 #[async_trait]
 pub trait NodeRepository {
-    async fn upsert(&self, node: KnowledgeNode) -> Result<UpsertOutcome>;
-    async fn get(&self, id: Uuid) -> Result<Option<KnowledgeNode>>;
-    async fn query_by_kind(&self, kind: &str, limit: usize) -> Result<Vec<KnowledgeNode>>;
-    async fn search_similar(&self, vector: &[f32], limit: usize) -> Result<Vec<KnowledgeNode>>;
+    async fn upsert(&self, tenant: Uuid, node: KnowledgeNode) -> Result<UpsertOutcome>;
+    async fn get(&self, tenant: Uuid, id: Uuid) -> Result<Option<KnowledgeNode>>;
+    async fn query_by_kind(
+        &self,
+        tenant: Uuid,
+        kind: &str,
+        limit: usize,
+        cursor: Option<Uuid>,
+    ) -> Result<Vec<KnowledgeNode>>;
 }
 ```
 
 A Postgres-backed implementation would use `sqlx` or `tokio-postgres`, while tests can use an in-memory mock (HashMap) until the DB layer is ready.
+
+## Cache & Event Bus Strategy
+
+- `ArtifactCache` and `EventBus` traits decouple the graph service from the concrete edge cache implementation. The in-memory/Redis adapters unblock local development, while a Scedge Core adapter will provide the production PoP integration.
+- Today, the Postgres bundle wires a placeholder cache/event bus; when Scedge OSS is enabled, we can drop in a Scedge-backed client that satisfies the same traits without touching business logic.
+- Invalidations flow through the outbox table. Workers claim events, publish them to the event bus, and downstream caches (Redis or Scedge) purge artifacts by provenance hash.
 
 ## Migration Workflow
 

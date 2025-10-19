@@ -45,6 +45,7 @@ cargo run
 This will start the HTTP server on `0.0.0.0:8080` and the gRPC server on `0.0.0.0:50051`.
 Provide `DATABASE_URL` to enable the PostgreSQL repository; without it, the service falls back to an in-memory store.
 Run `docker compose up` to start the local Postgres (pgvector) + Redis stack, then apply migrations with `cargo sqlx migrate run` before `cargo run`.
+Compose reads `.env`, so customize `POSTGRES_PORT`/`REDIS_PORT` (defaults: 55432/6379) if the host ports are occupied and update your `DATABASE_URL` (e.g. `postgres://postgres:postgres@localhost:55432/synagraph`).
 
 ### Smoke test (HTTP)
 ```bash

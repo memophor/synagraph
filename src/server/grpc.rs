@@ -11,11 +11,11 @@ use crate::config::AppConfig;
 use crate::domain::node::KnowledgeNode;
 use crate::pb::synagraph::v1::graph_service_server::{GraphService, GraphServiceServer};
 use crate::pb::synagraph::v1::{PingRequest, PingResponse, UpsertNodeRequest, UpsertNodeResponse};
-use crate::repository::{NodeRepositoryHandle, UpsertOutcome};
+use crate::repository::{RepositoryBundle, UpsertOutcome};
 
-pub async fn serve(cfg: AppConfig, node_repo: NodeRepositoryHandle) -> Result<()> {
+pub async fn serve(cfg: AppConfig, repos: RepositoryBundle) -> Result<()> {
     let addr: SocketAddr = cfg.grpc_addr;
-    let svc = GraphServiceImpl::new(cfg.clone(), node_repo);
+    let svc = GraphServiceImpl::new(cfg.clone(), repos);
 
     tracing::info!(%addr, "grpc server listening");
 
@@ -30,16 +30,16 @@ pub async fn serve(cfg: AppConfig, node_repo: NodeRepositoryHandle) -> Result<()
 struct GraphServiceImpl {
     service_name: String,
     version: String,
-    node_repo: NodeRepositoryHandle,
+    repos: RepositoryBundle,
     default_tenant: Uuid,
 }
 
 impl GraphServiceImpl {
-    fn new(cfg: AppConfig, node_repo: NodeRepositoryHandle) -> Self {
+    fn new(cfg: AppConfig, repos: RepositoryBundle) -> Self {
         Self {
             service_name: cfg.service_name,
             version: cfg.version,
-            node_repo,
+            repos,
             default_tenant: cfg.default_tenant_id,
         }
     }
@@ -81,7 +81,8 @@ impl GraphService for GraphServiceImpl {
         node.id = node_id;
 
         let outcome = self
-            .node_repo
+            .repos
+            .nodes
             .upsert(tenant_id, node)
             .await
             .map_err(|err| {
@@ -113,8 +114,11 @@ mod tests {
     use crate::config::AppConfig;
     use crate::pb::synagraph::v1::graph_service_server::GraphService;
     use crate::pb::synagraph::v1::UpsertNodeRequest;
-    use crate::repository::in_memory::InMemoryNodeRepository;
-    use crate::repository::NodeRepository;
+    use crate::repository::in_memory::{
+        InMemoryBus, InMemoryCache, InMemoryEdgeRepository, InMemoryEmbeddingRepository,
+        InMemoryNodeRepository, InMemoryOutboxRepository,
+    };
+    use crate::repository::RepositoryBundle;
     use std::sync::Arc;
     use tonic::Request;
     use uuid::Uuid;
@@ -149,8 +153,15 @@ mod tests {
             default_tenant_id: tenant,
         };
 
-        let repo = Arc::new(InMemoryNodeRepository::new());
-        let service = GraphServiceImpl::new(cfg.clone(), repo.clone());
+        let repos = RepositoryBundle::new(
+            Arc::new(InMemoryNodeRepository::new()),
+            Arc::new(InMemoryEdgeRepository::new()),
+            Arc::new(InMemoryEmbeddingRepository::new()),
+            Arc::new(InMemoryOutboxRepository::new()),
+            Arc::new(InMemoryCache::default()),
+            Arc::new(InMemoryBus::default()),
+        );
+        let service = GraphServiceImpl::new(cfg.clone(), repos.clone());
 
         let response = service
             .upsert_node(Request::new(UpsertNodeRequest {
@@ -165,7 +176,11 @@ mod tests {
         assert!(response.created);
         let node_id = Uuid::parse_str(&response.node_id).expect("valid uuid");
 
-        let stored = repo.get(tenant, node_id).await.expect("get succeeds");
+        let stored = repos
+            .nodes
+            .get(tenant, node_id)
+            .await
+            .expect("get succeeds");
         assert!(stored.is_some());
 
         let response_update = service
@@ -179,7 +194,8 @@ mod tests {
             .into_inner();
 
         assert!(!response_update.created);
-        let stored_updated = repo
+        let stored_updated = repos
+            .nodes
             .get(tenant, node_id)
             .await
             .expect("get succeeds")
