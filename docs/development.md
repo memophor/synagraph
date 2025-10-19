@@ -36,6 +36,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
 All commands should complete without warnings or failures. If `protoc` is missing, install it and rerun the checks.
+Refer to the [Testing Strategy](testing.md) for deeper coverage plans and additional targets as the suite evolves.
 
 ## 4. Running the Services
 
