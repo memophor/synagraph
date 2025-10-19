@@ -44,6 +44,7 @@ impl GraphServiceImpl {
 impl GraphService for GraphServiceImpl {
     async fn ping(&self, request: Request<PingRequest>) -> Result<Response<PingResponse>, Status> {
         let message = request.into_inner().message;
+        tracing::debug!(service = %self.service_name, "received ping request");
         let reply = PingResponse {
             message: if message.is_empty() {
                 "pong".to_string()
@@ -61,6 +62,7 @@ impl GraphService for GraphServiceImpl {
         request: Request<UpsertNodeRequest>,
     ) -> Result<Response<UpsertNodeResponse>, Status> {
         let payload = request.into_inner();
+        tracing::debug!(service = %self.service_name, kind = %payload.kind, "processing upsert_node");
         let json_payload = parse_payload(&payload.payload_json)?;
 
         let (node_id, created) = if payload.node_id.is_empty() {

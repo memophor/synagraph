@@ -39,12 +39,17 @@ This will start the HTTP server on `0.0.0.0:8080` and the gRPC server on `0.0.0.
 ### Smoke test (HTTP)
 ```bash
 curl http://localhost:8080/health
+curl http://localhost:8080/ready
 ```
 
 ### Smoke test (gRPC)
 ```bash
 evans --proto proto/synagraph.proto --host localhost --port 50051
 ```
+
+### Telemetry
+
+Structured logs default to `synagraph=info,tower_http=info`. Override with `RUST_LOG` when running locally, e.g. `RUST_LOG=debug cargo run`.
 
 ## Project Layout
 - `src/` – Runtime source code (HTTP + gRPC servers, domain models).

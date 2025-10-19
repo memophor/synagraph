@@ -49,6 +49,7 @@ Smoke-test the endpoints in another shell:
 
 ```bash
 curl http://localhost:8080/health
+curl http://localhost:8080/ready
 evans --proto proto/synagraph.proto --host localhost --port 50051 call synagraph.v1.GraphService.Ping
 ```
 
@@ -62,6 +63,7 @@ Default bind addresses and metadata are controlled via environment variables:
 | `GRPC_ADDR`     | gRPC listener socket address   | `0.0.0.0:50051`    |
 | `SERVICE_NAME`  | Service identifier in logs     | `synagraph`        |
 | `SERVICE_VERSION` | Service version override     | crate package ver. |
+| `RUST_LOG`        | Tracing verbosity             | `synagraph=info,tower_http=info` |
 
 Create a `.env` at the project root to customize these when running locally.
 

@@ -57,3 +57,33 @@ async fn ready_handler(State(cfg): State<AppConfig>) -> Json<ReadyResponse> {
         ready: true,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::extract::State;
+
+    fn sample_config() -> AppConfig {
+        AppConfig {
+            http_addr: "127.0.0.1:0".parse().unwrap(),
+            grpc_addr: "127.0.0.1:0".parse().unwrap(),
+            service_name: "synagraph".into(),
+            version: "0.1.0-test".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn health_handler_returns_ok_status() {
+        let cfg = sample_config();
+        let Json(response) = health_handler(State(cfg)).await;
+        assert_eq!(response.service, "synagraph");
+        assert_eq!(response.status, "ok");
+    }
+
+    #[tokio::test]
+    async fn ready_handler_reports_ready_true() {
+        let cfg = sample_config();
+        let Json(response) = ready_handler(State(cfg)).await;
+        assert!(response.ready);
+    }
+}

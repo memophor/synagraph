@@ -22,3 +22,17 @@ impl KnowledgeNode {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::KnowledgeNode;
+    use serde_json::json;
+
+    #[test]
+    fn new_sets_created_true_and_generates_id() {
+        let node = KnowledgeNode::new("test", json!({"foo": "bar"}));
+        assert!(node.created);
+        assert_eq!(node.kind, "test");
+        assert_eq!(node.payload["foo"], "bar");
+    }
+}

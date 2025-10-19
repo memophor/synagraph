@@ -4,9 +4,12 @@
 use tracing_subscriber::{fmt, EnvFilter};
 
 pub fn init() {
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("synagraph=info,tower_http=info"));
+
     if tracing::subscriber::set_global_default(
         fmt::Subscriber::builder()
-            .with_env_filter(EnvFilter::from_default_env())
+            .with_env_filter(env_filter)
             .compact()
             .finish(),
     )
