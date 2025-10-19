@@ -3,6 +3,8 @@
 
 This guide walks through preparing a local environment for hacking on SynaGraph.
 
+For the product and architectural backdrop, read the [Vision & Platform Principles](vision.md) document.
+
 ## 1. Install Prerequisites
 
 1. Install the Rust toolchain via [`rustup`](https://rustup.rs):

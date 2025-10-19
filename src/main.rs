@@ -4,6 +4,7 @@
 mod config;
 mod domain;
 mod pb;
+mod repository;
 mod server;
 mod telemetry;
 
@@ -17,7 +18,10 @@ async fn main() -> Result<()> {
 
     let cfg = AppConfig::from_env()?;
 
+    let node_repo: repository::NodeRepositoryHandle =
+        std::sync::Arc::new(repository::in_memory::InMemoryNodeRepository::new());
+
     tracing::info!(service = %cfg.service_name, version = %cfg.version, "starting synagraph");
 
-    server::run(cfg).await
+    server::run(cfg, node_repo).await
 }
