@@ -1,15 +1,10 @@
 // SynaGraph is open-source under the Apache License 2.0; see LICENSE for usage and contributions.
 // This binary sets up configuration, telemetry, and launches the public HTTP and gRPC servers.
 
-mod config;
-mod domain;
-mod pb;
-mod repository;
-mod server;
-mod telemetry;
-
 use anyhow::Result;
-use config::AppConfig;
+use synagraph::config::AppConfig;
+use synagraph::repository::{self, NodeRepositoryHandle};
+use synagraph::{server, telemetry};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -18,7 +13,7 @@ async fn main() -> Result<()> {
 
     let cfg = AppConfig::from_env()?;
 
-    let node_repo: repository::NodeRepositoryHandle =
+    let node_repo: NodeRepositoryHandle =
         std::sync::Arc::new(repository::in_memory::InMemoryNodeRepository::new());
 
     tracing::info!(service = %cfg.service_name, version = %cfg.version, "starting synagraph");

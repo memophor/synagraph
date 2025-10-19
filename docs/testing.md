@@ -14,6 +14,7 @@ This document outlines the multi-layer testing approach for SynaGraph. It comple
    - Scope: HTTP/gRPC handlers, configuration bootstrapping, telemetry wiring.
    - Spin up in-process servers using `tokio::spawn` and hit them with `reqwest`/`tonic` clients.
    - Validate readiness/health endpoints, gRPC round trips, error codes.
+   - First example: `tests/grpc_upsert.rs` exercises the `UpsertNode` flow via a real tonic client (`cargo test --test grpc_upsert`).
 
 3. **Contract/API tests**
    - Scope: ensure protobuf-defined behaviour remains backwards compatible.
