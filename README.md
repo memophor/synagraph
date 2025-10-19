@@ -14,7 +14,9 @@ SynaGraph is the open-source synaptic graph engine that powers the Memophor Know
 - Rust toolchain (`rustup` recommended)
 - `protoc` compiler for regenerating gRPC bindings
 
-Detailed setup instructions, common workflows, and troubleshooting tips live in [`docs/development.md`](docs/development.md).
+### Getting Started Docs
+- [Developer Setup](docs/development.md) – toolchain install, environment prep, and smoke tests.
+- [gRPC CLI Quickstart](docs/grpc_cli.md) – step-by-step guide for driving the API with Evans.
 
 ### Dev Workflows
 
