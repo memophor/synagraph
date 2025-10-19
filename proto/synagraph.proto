@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package synagraph.v1;
+
+option go_package = "github.com/memophor/synagraph/gen/go/synagraph/v1";
+option java_package = "org.memophor.synagraph.v1";
+
+service GraphService {
+  // Basic health/ping endpoint for smoke testing gRPC connectivity.
+  rpc Ping (PingRequest) returns (PingResponse);
+
+  // Upsert a knowledge node with metadata. Real implementation will persist
+  // to backing stores and trigger propagation events.
+  rpc UpsertNode (UpsertNodeRequest) returns (UpsertNodeResponse);
+}
+
+message PingRequest {
+  string message = 1;
+}
+
+message PingResponse {
+  string message = 1;
+  string version = 2;
+}
+
+message UpsertNodeRequest {
+  string node_id = 1;
+  string kind = 2;
+  string payload_json = 3;
+}
+
+message UpsertNodeResponse {
+  string node_id = 1;
+  bool created = 2;
+}

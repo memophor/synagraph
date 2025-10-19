@@ -1,0 +1,36 @@
+[package]
+name = "synagraph"
+version = "0.1.0"
+edition = "2021"
+authors = ["Memophor, Inc. <opensource@synagraph.org>"]
+description = "SynaGraph – the synaptic graph engine powering the Knowlemesh platform."
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/memophor/synagraph"
+keywords = ["graph", "vector", "knowledge", "grpc", "llm"]
+categories = ["database", "network-programming"]
+
+[dependencies]
+anyhow = "1.0"
+axum = { version = "0.7", features = ["json"] }
+dotenvy = "0.15"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tokio = { version = "1.37", features = ["rt-multi-thread", "macros"] }
+tonic = { version = "0.11", features = ["transport"] }
+prost = "0.12"
+prost-types = "0.12"
+tower = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+uuid = { version = "1", features = ["v4"], default-features = false }
+
+[build-dependencies]
+prost-build = "0.12"
+tonic-build = "0.11"
+
+[profile.release]
+codegen-units = 1
+lto = true
+strip = true
