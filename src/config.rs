@@ -1,3 +1,6 @@
+// SynaGraph is open-source under the Apache License 2.0; see LICENSE for usage and contributions.
+// This module centralizes environment-driven configuration for both HTTP and gRPC endpoints.
+
 use std::env;
 use std::net::SocketAddr;
 
@@ -24,7 +27,8 @@ impl AppConfig {
             .context("invalid GRPC_ADDR")?;
 
         let service_name = env::var("SERVICE_NAME").unwrap_or_else(|_| "synagraph".into());
-        let version = env::var("SERVICE_VERSION").unwrap_or_else(|_| env!("CARGO_PKG_VERSION").into());
+        let version =
+            env::var("SERVICE_VERSION").unwrap_or_else(|_| env!("CARGO_PKG_VERSION").into());
 
         Ok(Self {
             http_addr,

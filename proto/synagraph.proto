@@ -1,3 +1,6 @@
+// SynaGraph is open-source under the Apache License 2.0; see LICENSE for usage and contributions.
+// This protobuf contract defines the public gRPC surface for the synaptic graph engine.
+
 syntax = "proto3";
 
 package synagraph.v1;

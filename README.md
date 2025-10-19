@@ -14,6 +14,22 @@ SynaGraph is the open-source synaptic graph engine that powers the Memophor Know
 - Rust toolchain (`rustup` recommended)
 - `protoc` compiler for regenerating gRPC bindings
 
+Detailed setup instructions, common workflows, and troubleshooting tips live in [`docs/development.md`](docs/development.md).
+
+### Dev Workflows
+
+Common commands are captured in the `Makefile`:
+
+```bash
+make fmt   # cargo fmt
+make lint  # cargo clippy -- -D warnings
+make test  # cargo test
+```
+
+### CI Status
+
+Pull requests must pass the GitHub Actions workflow (`.github/workflows/ci.yml`) which runs formatting, clippy linting, and the test suite against `stable` Rust.
+
 ### Run the service
 ```bash
 cargo run
@@ -38,4 +54,3 @@ evans --proto proto/synagraph.proto --host localhost --port 50051
 ## License
 
 Apache License 2.0. See `LICENSE` for details.
-

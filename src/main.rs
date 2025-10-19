@@ -1,3 +1,6 @@
+// SynaGraph is open-source under the Apache License 2.0; see LICENSE for usage and contributions.
+// This binary sets up configuration, telemetry, and launches the public HTTP and gRPC servers.
+
 mod config;
 mod domain;
 mod pb;

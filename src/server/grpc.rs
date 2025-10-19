@@ -1,3 +1,6 @@
+// SynaGraph is open-source under the Apache License 2.0; see LICENSE for usage and contributions.
+// This gRPC service exposes the platform contract and will evolve with persistence and policy logic.
+
 use std::net::SocketAddr;
 
 use anyhow::{Context, Result};
@@ -91,9 +94,8 @@ fn parse_payload(raw: &str) -> Result<serde_json::Value, Status> {
         return Ok(serde_json::Value::Null);
     }
 
-    serde_json::from_str(raw).map_err(|err| {
-        Status::invalid_argument(format!("payload_json is not valid JSON: {}", err))
-    })
+    serde_json::from_str(raw)
+        .map_err(|err| Status::invalid_argument(format!("payload_json is not valid JSON: {}", err)))
 }
 
 #[cfg(test)]

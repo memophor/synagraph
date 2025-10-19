@@ -1,0 +1,5 @@
+# SynaGraph is open-source under the Apache License 2.0; see LICENSE for usage and contributions.
+# This file pins the default toolchain for contributors and CI environments.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]

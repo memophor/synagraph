@@ -1,3 +1,6 @@
+// SynaGraph is open-source under the Apache License 2.0; see LICENSE for usage and contributions.
+// KnowledgeNode models the fundamental vertex payload persisted and exchanged via the API.
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

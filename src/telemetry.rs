@@ -1,3 +1,6 @@
+// SynaGraph is open-source under the Apache License 2.0; see LICENSE for usage and contributions.
+// Telemetry helpers set up opinionated tracing defaults for local and production deployments.
+
 use tracing_subscriber::{fmt, EnvFilter};
 
 pub fn init() {
