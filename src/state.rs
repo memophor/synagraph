@@ -10,6 +10,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::repository::RepositoryBundle;
+use crate::scedge::ScedgeBridge;
 
 const MAX_HISTORY: usize = 200;
 
@@ -162,10 +163,15 @@ impl Metrics {
 pub struct AppContext {
     pub repos: RepositoryBundle,
     pub dashboard: DashboardHandle,
+    pub scedge: ScedgeBridge,
 }
 
 impl AppContext {
-    pub fn new(repos: RepositoryBundle, dashboard: DashboardHandle) -> Self {
-        Self { repos, dashboard }
+    pub fn new(repos: RepositoryBundle, dashboard: DashboardHandle, scedge: ScedgeBridge) -> Self {
+        Self {
+            repos,
+            dashboard,
+            scedge,
+        }
     }
 }

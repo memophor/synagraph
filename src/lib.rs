@@ -5,6 +5,7 @@ pub mod config;
 pub mod domain;
 pub mod pb;
 pub mod repository;
+pub mod scedge;
 pub mod server;
 pub mod state;
 pub mod telemetry;

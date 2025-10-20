@@ -5,7 +5,8 @@ use std::net::SocketAddr;
 
 use anyhow::{Context, Result};
 use axum::{
-    extract::State,
+    extract::{Query, State},
+    http::StatusCode,
     routing::{get, post},
     Json, Router,
 };
@@ -16,6 +17,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use crate::config::AppConfig;
 use crate::domain::node::KnowledgeNode;
 use crate::repository::UpsertOutcome;
+use crate::scedge::{ScedgeError, ScedgeStatus};
 use crate::state::{AppContext, DashboardOverview, HistoryEvent};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -55,7 +57,11 @@ pub async fn serve(cfg: AppConfig, ctx: AppContext) -> Result<()> {
         .route("/history/clear", post(api_history_clear))
         .route("/operations/store", post(api_store))
         .route("/operations/lookup", post(api_lookup))
-        .route("/operations/purge", post(api_purge));
+        .route("/operations/purge", post(api_purge))
+        .route("/scedge/status", get(api_scedge_status))
+        .route("/scedge/lookup", get(api_scedge_lookup))
+        .route("/scedge/store", post(api_scedge_store))
+        .route("/scedge/purge", post(api_scedge_purge));
 
     let spa_service = ServeDir::new("dashboard/dist")
         .not_found_service(ServeFile::new("dashboard/dist/index.html"));
@@ -139,6 +145,12 @@ struct PurgeRequest {
 #[derive(Debug, Serialize)]
 struct ApiMessage {
     message: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ScedgeLookupQuery {
+    key: String,
+    tenant: Option<String>,
 }
 
 async fn api_overview(State(state): State<HttpState>) -> Json<DashboardOverview> {
@@ -236,6 +248,60 @@ async fn api_purge(
     })
 }
 
+async fn api_scedge_status(State(state): State<HttpState>) -> Json<ScedgeStatus> {
+    Json(state.ctx.scedge.status().await)
+}
+
+async fn api_scedge_lookup(
+    State(state): State<HttpState>,
+    Query(query): Query<ScedgeLookupQuery>,
+) -> (StatusCode, Json<Value>) {
+    match state.ctx.scedge.lookup(query.key, query.tenant).await {
+        Ok((status, payload)) => (map_status(status), Json(payload)),
+        Err(err) => scedge_error_response(err),
+    }
+}
+
+async fn api_scedge_store(
+    State(state): State<HttpState>,
+    Json(body): Json<Value>,
+) -> (StatusCode, Json<Value>) {
+    match state.ctx.scedge.store(body).await {
+        Ok((status, payload)) => (map_status(status), Json(payload)),
+        Err(err) => scedge_error_response(err),
+    }
+}
+
+async fn api_scedge_purge(
+    State(state): State<HttpState>,
+    Json(body): Json<Value>,
+) -> (StatusCode, Json<Value>) {
+    match state.ctx.scedge.purge(body).await {
+        Ok((status, payload)) => (map_status(status), Json(payload)),
+        Err(err) => scedge_error_response(err),
+    }
+}
+
+fn map_status(status: reqwest::StatusCode) -> StatusCode {
+    StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY)
+}
+
+fn scedge_error_response(err: ScedgeError) -> (StatusCode, Json<Value>) {
+    match err {
+        ScedgeError::Disabled => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "SCEDGE_BASE_URL not configured" })),
+        ),
+        ScedgeError::Http(source) => {
+            tracing::error!(error = %source, "scedge proxy error");
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({ "error": source.to_string() })),
+            )
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,6 +325,7 @@ mod tests {
             version: "0.1.0-test".into(),
             database_url: None,
             default_tenant_id: Uuid::new_v4(),
+            scedge_base_url: None,
         }
     }
 
@@ -273,7 +340,8 @@ mod tests {
             Arc::new(InMemoryBus::default()),
         );
         let dashboard = crate::state::DashboardHandle::new();
-        let ctx = AppContext::new(repos, dashboard);
+        let scedge = crate::scedge::ScedgeBridge::new(None);
+        let ctx = AppContext::new(repos, dashboard, scedge);
         HttpState { cfg, ctx }
     }
 

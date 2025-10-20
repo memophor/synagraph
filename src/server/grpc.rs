@@ -161,6 +161,7 @@ mod tests {
             version: "0.1.0-test".into(),
             database_url: None,
             default_tenant_id: tenant,
+            scedge_base_url: None,
         };
 
         let repos = RepositoryBundle::new(
@@ -172,7 +173,8 @@ mod tests {
             Arc::new(InMemoryBus::default()),
         );
         let dashboard = DashboardHandle::new();
-        let ctx = AppContext::new(repos.clone(), dashboard);
+        let scedge = crate::scedge::ScedgeBridge::new(None);
+        let ctx = AppContext::new(repos.clone(), dashboard, scedge);
         let service = GraphServiceImpl::new(cfg.clone(), ctx.clone());
 
         let response = service

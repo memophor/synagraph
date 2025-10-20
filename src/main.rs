@@ -14,6 +14,7 @@ use synagraph::repository::postgres::{
     PostgresOutboxRepository,
 };
 use synagraph::repository::RepositoryBundle;
+use synagraph::scedge::ScedgeBridge;
 use synagraph::state::{AppContext, DashboardHandle};
 use synagraph::{server, telemetry};
 
@@ -52,7 +53,8 @@ async fn main() -> Result<()> {
     };
 
     let dashboard = DashboardHandle::new();
-    let ctx = AppContext::new(repos, dashboard);
+    let scedge = ScedgeBridge::new(cfg.scedge_base_url.clone());
+    let ctx = AppContext::new(repos, dashboard, scedge);
 
     tracing::info!(service = %cfg.service_name, version = %cfg.version, "starting synagraph");
 

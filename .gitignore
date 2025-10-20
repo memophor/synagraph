@@ -3,3 +3,6 @@
 **/*.swp
 .DS_Store
 .env
+dashboard/node_modules/
+dashboard/dist/
+dashboard/.env

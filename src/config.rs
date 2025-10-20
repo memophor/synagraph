@@ -15,6 +15,7 @@ pub struct AppConfig {
     pub version: String,
     pub database_url: Option<String>,
     pub default_tenant_id: Uuid,
+    pub scedge_base_url: Option<String>,
 }
 
 impl AppConfig {
@@ -37,6 +38,7 @@ impl AppConfig {
             .ok()
             .and_then(|value| Uuid::parse_str(&value).ok())
             .unwrap_or_else(Uuid::nil);
+        let scedge_base_url = env::var("SCEDGE_BASE_URL").ok();
 
         Ok(Self {
             http_addr,
@@ -45,6 +47,7 @@ impl AppConfig {
             version,
             database_url,
             default_tenant_id,
+            scedge_base_url,
         })
     }
 }

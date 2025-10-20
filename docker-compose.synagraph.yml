@@ -1,0 +1,47 @@
+networks:
+  memonet:
+    external: true
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: synagraph-postgres
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: synagraph
+    # Expose Postgres on a non-default host port to avoid local conflicts
+    ports:
+      - "5435:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./pg-init:/docker-entrypoint-initdb.d
+    networks:
+      - memonet
+
+  nats:
+    image: nats:2
+    container_name: synagraph-nats
+    ports:
+      - "4222:4222"
+    networks:
+      - memonet
+
+  synagraph:
+    build: .
+    container_name: synagraph
+    depends_on:
+      - postgres
+      - nats
+    environment:
+      SYNAGRAPH_DB_URL: postgres://postgres:postgres@postgres:5432/synagraph
+      SYNAGRAPH_EVENT_BUS: nats://nats:4222
+      SYNAGRAPH_HTTP_PORT: "8080"
+      SYNAGRAPH_VECTOR_DIM: "1536"
+      # SCEDGE_BASE_URL: http://scedge:8082
+    ports:
+      - "8081:8080"
+    networks:
+      - memonet
+volumes:
+  pgdata:

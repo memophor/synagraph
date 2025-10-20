@@ -74,8 +74,7 @@ cargo run
 ```
 This will start the HTTP server on `0.0.0.0:8080` and the gRPC server on `0.0.0.0:50051`.
 Provide `DATABASE_URL` to enable the PostgreSQL repository; without it, the service falls back to an in-memory store.
-Run `docker compose up` to start the local Postgres (pgvector) + Redis stack, then apply migrations with `cargo sqlx migrate run` before `cargo run`.
-Compose reads `.env`, so customize `POSTGRES_PORT`/`REDIS_PORT` (defaults: 55432/6379) if the host ports are occupied and update your `DATABASE_URL` (e.g. `postgres://postgres:postgres@localhost:55432/synagraph`).
+Run `docker network create memonet` once, then `docker compose -f docker-compose.synagraph.yml up -d --build` to start Postgres (pgvector), NATS, and the SynaGraph binary. Point `DATABASE_URL` to `postgres://postgres:postgres@localhost:5435/synagraph` before running migrations with `cargo sqlx migrate run`.
 The admin dashboard is available at `/dashboard` when `dashboard/dist` exists—build it via `cd dashboard && npm install && npm run build`, or run `npm run dev` for a live UI during development.
 
 # 5. Smoke test HTTP endpoint
@@ -176,21 +175,52 @@ docker run -p 8080:8080 -p 50051:50051 \
 
 ### With Docker Compose
 
+Create the shared network once (Scedge and other Knowlemesh components attach to the same layer), then launch the stack:
+
 ```bash
-docker compose up
+docker network create memonet
+docker compose -f docker-compose.synagraph.yml up -d --build
 ```
 
-This starts:
-- PostgreSQL 15 with pgvector (port 55432)
-- Redis 7 (port 6379)
-- SynaGraph service (HTTP: 8080, gRPC: 50051)
+Follow logs with `docker compose -f docker-compose.synagraph.yml logs -f synagraph`.
 
-**📝 Note:** Customize ports in `.env` if defaults conflict:
+Default host bindings:
+
+| Service     | Container | Host |
+|-------------|-----------|------|
+| PostgreSQL  | 5432      | 5435 |
+| NATS        | 4222      | 4222 |
+| SynaGraph   | 8080      | 8081 |
+
+If any host port is busy, edit `docker-compose.synagraph.yml` before bringing the stack up.
+The `pg-init/001_pgvector.sql` bootstrap script enables the `vector` extension automatically on first boot.
+
+Smoke test:
+
 ```bash
-POSTGRES_PORT=55432
-REDIS_PORT=6379
-DATABASE_URL=postgres://postgres:postgres@localhost:55432/synagraph
+curl http://localhost:8081/health
+curl -s -X POST http://localhost:8081/api/operations/store \
+  -H 'content-type: application/json' \
+  -d '{"kind":"note","payload":{"title":"Q4 Summary","summary":"Revenue +23%"}}'
 ```
+
+The dashboard will be available at <http://localhost:8081/dashboard>. Shut the stack down with `docker compose -f docker-compose.synagraph.yml down` and remove the volume (`docker volume rm synagraph_pgdata`) if you need a clean database.
+
+When integrating Scedge, attach its container to the same network:
+
+```bash
+docker run --network memonet … scedge-image
+```
+
+### Monitoring Scedge Core
+
+Set `SCEDGE_BASE_URL` to the reachable Scedge Core endpoint (for example, `http://scedge:8082` when the cache runs in the same Docker network). The dashboard exposes a new **Scedge** tab that:
+
+- Shows health and Prometheus metrics from `/healthz` and `/metrics`
+- Executes cache lookups, stores, and purges via the HTTP API
+- Surfaces recent errors so you can quickly diagnose cache behaviour
+
+If the variable is unset the tab remains disabled and the proxy endpoints return `503 Service Unavailable`.
 
 ---
 
@@ -206,6 +236,7 @@ Configure via environment variables (see [.env.example](.env.example)):
 | `RUST_LOG` | `synagraph=info` | Log level filter |
 | `POSTGRES_PORT` | `55432` | Docker Compose PostgreSQL port |
 | `REDIS_PORT` | `6379` | Docker Compose Redis port |
+| `SCEDGE_BASE_URL` | unset | Optional Scedge Core API base URL (e.g., `http://scedge:8082`) enabling dashboard monitoring |
 
 ---
 
@@ -263,8 +294,9 @@ cargo audit      # Security audit
 ### Local Development
 
 ```bash
-# Start dependencies
-docker compose up -d postgres redis
+# Start dependencies (Postgres + NATS + SynaGraph binary)
+docker network create memonet 2>/dev/null || true
+docker compose -f docker-compose.synagraph.yml up -d --build
 
 # Run with hot-reload (install cargo-watch)
 cargo watch -x run

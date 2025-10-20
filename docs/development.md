@@ -44,8 +44,15 @@ cargo test
 ```
 All commands should complete without warnings or failures. If `protoc` is missing, install it and rerun the checks.
 Refer to the [Testing Strategy](testing.md) for deeper coverage plans as the suite evolves.
-To exercise the Postgres repository locally, bring up `docker compose up` and run `cargo test --test postgres_nodes` (skips automatically if `DATABASE_URL` is unset).
-Compose reads `.env`, so you can change the exposed ports without editing the YAML. By default we use `POSTGRES_PORT=55432` and `REDIS_PORT=6379` (see `.env.example`). Update these if the ports clash on your machine, and remember to align `DATABASE_URL` accordingly.
+To exercise the Postgres repository locally, build the container stack and run `cargo test --test postgres_nodes` (skips automatically if `DATABASE_URL` is unset):
+
+```bash
+docker network create memonet        # one-time setup
+docker compose -f docker-compose.synagraph.yml up -d --build
+```
+
+The compose file exposes Postgres on `localhost:5435`, NATS on `localhost:4222`, and the SynaGraph HTTP API on `localhost:8081`. Adjust the port mappings in `docker-compose.synagraph.yml` if they conflict on your machine. Point `DATABASE_URL` at `postgres://postgres:postgres@localhost:5435/synagraph` when running tests against the containerized database.
+Set `SCEDGE_BASE_URL` to the Scedge Core endpoint (for example, `http://localhost:8082` or `http://scedge:8082` when running inside the shared `memonet` network) to enable dashboard observability and cache controls.
 
 For the dashboard UI:
 
@@ -78,7 +85,7 @@ evans --proto proto/synagraph.proto --host localhost --port 50051 repl
 
 Inside the Evans REPL, select the package/service and invoke RPCs as documented in the [gRPC CLI Quickstart](grpc_cli.md).
 If `DATABASE_URL` is unset, the service uses the in-memory repository; setting it switches runtime persistence to PostgreSQL.
-To bring up a local Postgres + Redis stack, run `docker compose up` from the project root and apply migrations with `cargo sqlx migrate run` (requires `DATABASE_URL`).
+To bring up the full container stack, run `docker compose -f docker-compose.synagraph.yml up -d` from the project root (after creating the `memonet` network) and apply migrations with `cargo sqlx migrate run` (requires `DATABASE_URL`).
 
 ## 5. Environment Configuration
 
