@@ -14,6 +14,7 @@ use synagraph::repository::in_memory::{
 };
 use synagraph::repository::RepositoryBundle;
 use synagraph::server;
+use synagraph::state::{AppContext, DashboardHandle};
 use tokio::net::TcpStream;
 use tokio::time::sleep;
 use tonic::transport::Channel;
@@ -43,9 +44,11 @@ async fn start_server() -> SocketAddr {
         Arc::new(InMemoryCache::default()),
         Arc::new(InMemoryBus::default()),
     );
+    let dashboard = DashboardHandle::new();
+    let ctx = AppContext::new(repos, dashboard);
 
     tokio::spawn(async move {
-        server::run(cfg, repos).await.expect("server exits cleanly");
+        server::run(cfg, ctx).await.expect("server exits cleanly");
     });
 
     // Poll until the server is ready to accept connections or timeout.

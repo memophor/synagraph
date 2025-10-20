@@ -14,6 +14,7 @@ use synagraph::repository::postgres::{
     PostgresOutboxRepository,
 };
 use synagraph::repository::RepositoryBundle;
+use synagraph::state::{AppContext, DashboardHandle};
 use synagraph::{server, telemetry};
 
 #[tokio::main]
@@ -50,7 +51,10 @@ async fn main() -> Result<()> {
         }
     };
 
+    let dashboard = DashboardHandle::new();
+    let ctx = AppContext::new(repos, dashboard);
+
     tracing::info!(service = %cfg.service_name, version = %cfg.version, "starting synagraph");
 
-    server::run(cfg, repos).await
+    server::run(cfg, ctx).await
 }

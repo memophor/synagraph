@@ -4,7 +4,11 @@
 use std::net::SocketAddr;
 
 use anyhow::{Context, Result};
-use axum::{extract::State, routing::{get, post}, Json, Router};
+use axum::{
+    extract::State,
+    routing::{get, post},
+    Json, Router,
+};
 use serde::Serialize;
 use tokio::net::TcpListener;
 use tower_http::services::{ServeDir, ServeFile};
@@ -12,9 +16,9 @@ use tower_http::services::{ServeDir, ServeFile};
 use crate::config::AppConfig;
 use crate::domain::node::KnowledgeNode;
 use crate::repository::UpsertOutcome;
-use crate::state::{AppContext, DashboardHandle, DashboardOverview, HistoryEvent};
+use crate::state::{AppContext, DashboardOverview, HistoryEvent};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 #[derive(Serialize)]
@@ -40,7 +44,10 @@ struct HttpState {
 
 pub async fn serve(cfg: AppConfig, ctx: AppContext) -> Result<()> {
     let addr: SocketAddr = cfg.http_addr;
-    let state = HttpState { cfg: cfg.clone(), ctx };
+    let state = HttpState {
+        cfg: cfg.clone(),
+        ctx,
+    };
 
     let api_router = Router::new()
         .route("/overview", get(api_overview))
@@ -50,9 +57,8 @@ pub async fn serve(cfg: AppConfig, ctx: AppContext) -> Result<()> {
         .route("/operations/lookup", post(api_lookup))
         .route("/operations/purge", post(api_purge));
 
-    let spa_service = ServeDir::new("dashboard/dist").not_found_service(ServeFile::new(
-        "dashboard/dist/index.html",
-    ));
+    let spa_service = ServeDir::new("dashboard/dist")
+        .not_found_service(ServeFile::new("dashboard/dist/index.html"));
 
     let app = Router::new()
         .route("/health", get(health_handler))
@@ -135,11 +141,11 @@ struct ApiMessage {
     message: String,
 }
 
-async fn api_overview(State(state): State<HttpState>) -> Json<crate::state::DashboardOverview> {
+async fn api_overview(State(state): State<HttpState>) -> Json<DashboardOverview> {
     Json(state.ctx.dashboard.overview())
 }
 
-async fn api_history(State(state): State<HttpState>) -> Json<Vec<crate::state::HistoryEvent>> {
+async fn api_history(State(state): State<HttpState>) -> Json<Vec<HistoryEvent>> {
     Json(state.ctx.dashboard.history())
 }
 
@@ -150,7 +156,10 @@ async fn api_history_clear(State(state): State<HttpState>) -> Json<ApiMessage> {
     })
 }
 
-async fn api_store(State(state): State<HttpState>, Json(req): Json<StoreRequest>) -> Json<StoreResponse> {
+async fn api_store(
+    State(state): State<HttpState>,
+    Json(req): Json<StoreRequest>,
+) -> Json<StoreResponse> {
     let tenant = req.tenant_id.unwrap_or(state.cfg.default_tenant_id);
     let mut node = KnowledgeNode::new(tenant, req.kind, req.payload);
     if let Some(id) = req.node_id {
@@ -165,10 +174,12 @@ async fn api_store(State(state): State<HttpState>, Json(req): Json<StoreRequest>
         .await
         .expect("node upsert via http");
 
-    state
-        .ctx
-        .dashboard
-        .record_store(tenant, &node.kind, node.id, matches!(outcome, UpsertOutcome::Created));
+    state.ctx.dashboard.record_store(
+        tenant,
+        &node.kind,
+        node.id,
+        matches!(outcome, UpsertOutcome::Created),
+    );
 
     Json(StoreResponse {
         node_id: node.id,
@@ -189,12 +200,18 @@ async fn api_lookup(
             (true, Some(node))
         }
         Ok(None) => {
-            state.ctx.dashboard.record_lookup(tenant, req.node_id, false);
+            state
+                .ctx
+                .dashboard
+                .record_lookup(tenant, req.node_id, false);
             (false, None)
         }
         Err(err) => {
             tracing::error!(?err, "lookup failed");
-            state.ctx.dashboard.record_lookup(tenant, req.node_id, false);
+            state
+                .ctx
+                .dashboard
+                .record_lookup(tenant, req.node_id, false);
             (false, None)
         }
     };
@@ -202,7 +219,10 @@ async fn api_lookup(
     Json(LookupResponse { found, node })
 }
 
-async fn api_purge(State(state): State<HttpState>, Json(req): Json<PurgeRequest>) -> Json<ApiMessage> {
+async fn api_purge(
+    State(state): State<HttpState>,
+    Json(req): Json<PurgeRequest>,
+) -> Json<ApiMessage> {
     let tenant = req.tenant_id.unwrap_or(state.cfg.default_tenant_id);
     state.ctx.dashboard.record_purge(
         tenant,
@@ -227,7 +247,9 @@ mod tests {
         InMemoryBus, InMemoryCache, InMemoryEdgeRepository, InMemoryEmbeddingRepository,
         InMemoryNodeRepository, InMemoryOutboxRepository,
     };
+    use crate::repository::RepositoryBundle;
     use crate::state::AppContext;
+    use crate::state::DashboardHandle;
 
     fn sample_config() -> AppConfig {
         AppConfig {

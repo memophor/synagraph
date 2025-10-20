@@ -47,6 +47,15 @@ Refer to the [Testing Strategy](testing.md) for deeper coverage plans as the sui
 To exercise the Postgres repository locally, bring up `docker compose up` and run `cargo test --test postgres_nodes` (skips automatically if `DATABASE_URL` is unset).
 Compose reads `.env`, so you can change the exposed ports without editing the YAML. By default we use `POSTGRES_PORT=55432` and `REDIS_PORT=6379` (see `.env.example`). Update these if the ports clash on your machine, and remember to align `DATABASE_URL` accordingly.
 
+For the dashboard UI:
+
+```bash
+cd dashboard
+npm install
+npm run dev    # separate terminal; backend still runs on 8080
+npm run build  # emit static assets served from /dashboard
+```
+
 For upcoming persistence work, consult the [Storage Architecture Plan](storage_plan.md) to understand how repositories and migrations will integrate with the runtime.
 
 As observability features arrive, track logging/metrics changes in the [Observability Roadmap](observability.md).

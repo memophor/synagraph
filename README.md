@@ -53,8 +53,13 @@ SynaGraph is the **graph layer** of the Memophor platform:
 ### Quick Start (5 minutes)
 
 ```bash
-# 1. Start PostgreSQL + Redis stack
-docker compose up -d
+make fmt   # cargo fmt
+make lint  # cargo clippy -- -D warnings
+make test  # cargo test
+make migrate # cargo sqlx migrate run
+make prepare # cargo sqlx prepare -- --all-targets --all-features
+make ui-build # npm install && npm run build (dash dashboard)
+```
 
 # 2. Clone and setup SynaGraph
 git clone https://github.com/memophor/synagraph.git
@@ -66,6 +71,12 @@ cargo sqlx migrate run
 
 # 4. Start the service
 cargo run
+```
+This will start the HTTP server on `0.0.0.0:8080` and the gRPC server on `0.0.0.0:50051`.
+Provide `DATABASE_URL` to enable the PostgreSQL repository; without it, the service falls back to an in-memory store.
+Run `docker compose up` to start the local Postgres (pgvector) + Redis stack, then apply migrations with `cargo sqlx migrate run` before `cargo run`.
+Compose reads `.env`, so customize `POSTGRES_PORT`/`REDIS_PORT` (defaults: 55432/6379) if the host ports are occupied and update your `DATABASE_URL` (e.g. `postgres://postgres:postgres@localhost:55432/synagraph`).
+The admin dashboard is available at `/dashboard` when `dashboard/dist` exists—build it via `cd dashboard && npm install && npm run build`, or run `npm run dev` for a live UI during development.
 
 # 5. Smoke test HTTP endpoint
 curl http://localhost:8080/health

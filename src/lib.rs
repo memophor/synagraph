@@ -6,5 +6,5 @@ pub mod domain;
 pub mod pb;
 pub mod repository;
 pub mod server;
-pub mod telemetry;
 pub mod state;
+pub mod telemetry;

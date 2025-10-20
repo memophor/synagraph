@@ -28,3 +28,6 @@ migrate:
 
 prepare:
 	cargo sqlx prepare -- --all-targets --all-features
+
+ui-build:
+	cd dashboard && npm install && npm run build

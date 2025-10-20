@@ -1,14 +1,12 @@
 // SynaGraph is open-source under the Apache License 2.0; see LICENSE for usage and contributions.
 // Dashboard state collects metrics and history entries used by the admin UI.
 
-use std::collections::VecDeque;
-use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use chrono::{DateTime, Utc};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::VecDeque;
+use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::repository::RepositoryBundle;
@@ -30,7 +28,7 @@ impl DashboardHandle {
     pub fn record_store(&self, tenant: Uuid, kind: &str, node_id: Uuid, created: bool) {
         let mut guard = self.inner.write();
         guard.metrics.total_stores += 1;
-        guard.metrics.last_updated = Utc::now();
+        guard.metrics.last_updated = Some(Utc::now());
         guard.push_history(HistoryEvent::new(
             "STORE",
             tenant,
@@ -50,7 +48,7 @@ impl DashboardHandle {
         } else {
             guard.metrics.cache_misses += 1;
         }
-        guard.metrics.last_updated = Utc::now();
+        guard.metrics.last_updated = Some(Utc::now());
         guard.push_history(HistoryEvent::new(
             "LOOKUP",
             tenant,
@@ -64,7 +62,7 @@ impl DashboardHandle {
     pub fn record_purge(&self, tenant: Uuid, detail: Value) {
         let mut guard = self.inner.write();
         guard.metrics.total_purges += 1;
-        guard.metrics.last_updated = Utc::now();
+        guard.metrics.last_updated = Some(Utc::now());
         guard.push_history(HistoryEvent::new("PURGE", tenant, detail));
     }
 
