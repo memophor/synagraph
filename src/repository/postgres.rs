@@ -129,6 +129,56 @@ impl NodeRepository for PostgresNodeRepository {
         }
     }
 
+    async fn get_by_key(&self, tenant: Uuid, key: &str) -> Result<Option<KnowledgeNode>> {
+        let mut conn = self.pool.acquire().await.context("acquire connection")?;
+        set_tenant_on_conn(&mut conn, tenant).await?;
+
+        let row = sqlx::query(
+            r#"
+            SELECT id, tenant_id, kind, payload_json, provenance, policy, created_at, updated_at
+            FROM knowledge_nodes
+            WHERE tenant_id = $1
+              AND payload_json ->> 'key' = $2
+            ORDER BY updated_at DESC
+            LIMIT 1
+        "#,
+        )
+        .bind(tenant)
+        .bind(key)
+        .fetch_optional(&mut *conn)
+        .await
+        .context("failed to fetch capsule by key")?;
+
+        match row {
+            Some(row) => Ok(Some(map_node_row(&row)?)),
+            None => Ok(None),
+        }
+    }
+
+    async fn delete_by_key(&self, tenant: Uuid, key: &str) -> Result<Option<KnowledgeNode>> {
+        let mut conn = self.pool.acquire().await.context("acquire connection")?;
+        set_tenant_on_conn(&mut conn, tenant).await?;
+
+        let row = sqlx::query(
+            r#"
+            DELETE FROM knowledge_nodes
+            WHERE tenant_id = $1
+              AND payload_json ->> 'key' = $2
+            RETURNING id, tenant_id, kind, payload_json, provenance, policy, created_at, updated_at
+        "#,
+        )
+        .bind(tenant)
+        .bind(key)
+        .fetch_optional(&mut *conn)
+        .await
+        .context("failed to delete capsule by key")?;
+
+        match row {
+            Some(row) => Ok(Some(map_node_row(&row)?)),
+            None => Ok(None),
+        }
+    }
+
     async fn query_by_kind(
         &self,
         tenant: Uuid,

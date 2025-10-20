@@ -101,48 +101,73 @@ select {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 40%);
 }
 
-.flash-banner {
+.toast-stack {
+  position: fixed;
+  top: 24px;
+  right: 24px;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 100;
+}
+
+.toast {
+  min-width: 320px;
+  max-width: 420px;
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  padding: 14px 18px;
+  gap: 12px;
+  padding: 16px 20px;
   border-radius: 18px;
-  border: 1px solid transparent;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  border: none;
+  box-shadow: 0 24px 60px rgba(10, 24, 44, 0.35);
+  background: var(--panel);
+  color: var(--text);
 }
 
-.flash-banner.flash-success {
-  background: rgba(24, 179, 129, 0.14);
-  color: var(--positive);
-  border-color: rgba(24, 179, 129, 0.32);
-}
-
-.flash-banner.flash-error {
-  background: rgba(255, 111, 145, 0.14);
-  color: var(--negative);
-  border-color: rgba(255, 111, 145, 0.32);
-}
-
-.flash-content {
+.toast-content {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  flex: 1;
 }
 
-.flash-detail {
+.toast-detail {
   font-size: 0.8rem;
   color: var(--muted);
   font-weight: 500;
 }
 
-.flash-dismiss {
+.toast-dismiss {
   border: none;
   background: transparent;
   color: inherit;
   font-size: 1.1rem;
   cursor: pointer;
+}
+
+.toast.toast-success .toast-dismiss,
+.toast.toast-error .toast-dismiss {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.toast.toast-success {
+  background: linear-gradient(135deg, #1ed6c5, #1aa5ad);
+  color: #ffffff;
+}
+
+.toast.toast-success .toast-detail {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.toast.toast-error {
+  background: linear-gradient(135deg, #ff6484, #f73a61);
+  color: #ffffff;
+}
+
+.toast.toast-error .toast-detail {
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .topbar {

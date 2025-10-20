@@ -63,6 +63,40 @@ impl NodeRepository for InMemoryNodeRepository {
         Ok(guard.get(&tenant).and_then(|nodes| nodes.get(&id)).cloned())
     }
 
+    async fn get_by_key(&self, tenant: Uuid, key: &str) -> Result<Option<KnowledgeNode>> {
+        let guard = self.inner.read().await;
+        let Some(nodes_map) = guard.get(&tenant) else {
+            return Ok(None);
+        };
+
+        let mut candidates: Vec<KnowledgeNode> = nodes_map
+            .values()
+            .filter(|node| node.payload_json.get("key").and_then(|v| v.as_str()) == Some(key))
+            .cloned()
+            .collect();
+
+        candidates.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        Ok(candidates.into_iter().next())
+    }
+
+    async fn delete_by_key(&self, tenant: Uuid, key: &str) -> Result<Option<KnowledgeNode>> {
+        let mut guard = self.inner.write().await;
+        let Some(nodes_map) = guard.get_mut(&tenant) else {
+            return Ok(None);
+        };
+
+        if let Some((id, _)) = nodes_map
+            .iter()
+            .find(|(_, node)| node.payload_json.get("key").and_then(|v| v.as_str()) == Some(key))
+            .map(|(id, node)| (*id, node.clone()))
+        {
+            let removed = nodes_map.remove(&id);
+            return Ok(removed);
+        }
+
+        Ok(None)
+    }
+
     async fn query_by_kind(
         &self,
         tenant: Uuid,

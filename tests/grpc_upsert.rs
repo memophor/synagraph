@@ -1,6 +1,7 @@
 // SynaGraph is open-source under the Apache License 2.0; see LICENSE for usage and contributions.
 // Integration test: spins up the gRPC server and exercises UpsertNode through a tonic client.
 
+use std::collections::HashMap;
 use std::net::{SocketAddr, TcpListener};
 use std::sync::Arc;
 use std::time::Duration;
@@ -13,6 +14,7 @@ use synagraph::repository::in_memory::{
     InMemoryNodeRepository, InMemoryOutboxRepository,
 };
 use synagraph::repository::RepositoryBundle;
+use synagraph::scedge::ScedgeBridge;
 use synagraph::server;
 use synagraph::state::{AppContext, DashboardHandle};
 use tokio::net::TcpStream;
@@ -34,6 +36,10 @@ async fn start_server() -> SocketAddr {
         version: "0.1.0-test".into(),
         database_url: None,
         default_tenant_id: default_tenant,
+        scedge_base_url: None,
+        scedge_event_bus_enabled: false,
+        scedge_event_bus_subject: "scedge:events".into(),
+        tenant_slugs: HashMap::new(),
     };
 
     let repos = RepositoryBundle::new(
@@ -45,7 +51,8 @@ async fn start_server() -> SocketAddr {
         Arc::new(InMemoryBus::default()),
     );
     let dashboard = DashboardHandle::new();
-    let ctx = AppContext::new(repos, dashboard);
+    let scedge = ScedgeBridge::new(None);
+    let ctx = AppContext::new(repos, dashboard, scedge);
 
     tokio::spawn(async move {
         server::run(cfg, ctx).await.expect("server exits cleanly");

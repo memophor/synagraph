@@ -76,6 +76,10 @@ pub trait NodeRepository: Send + Sync {
 
     async fn get(&self, tenant: Uuid, id: Uuid) -> Result<Option<KnowledgeNode>>;
 
+    async fn get_by_key(&self, tenant: Uuid, key: &str) -> Result<Option<KnowledgeNode>>;
+
+    async fn delete_by_key(&self, tenant: Uuid, key: &str) -> Result<Option<KnowledgeNode>>;
+
     async fn query_by_kind(
         &self,
         tenant: Uuid,

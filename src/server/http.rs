@@ -15,12 +15,14 @@ use tokio::net::TcpListener;
 use tower_http::services::{ServeDir, ServeFile};
 
 use crate::config::AppConfig;
+use crate::domain::capsule::{CapsuleIngestRequest, CapsuleLookupResponse};
 use crate::domain::node::KnowledgeNode;
 use crate::repository::UpsertOutcome;
 use crate::scedge::{ScedgeError, ScedgeStatus};
 use crate::state::{AppContext, DashboardOverview, HistoryEvent};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::json;
+use serde_json::Value;
 use uuid::Uuid;
 
 #[derive(Serialize)]
@@ -58,6 +60,9 @@ pub async fn serve(cfg: AppConfig, ctx: AppContext) -> Result<()> {
         .route("/operations/store", post(api_store))
         .route("/operations/lookup", post(api_lookup))
         .route("/operations/purge", post(api_purge))
+        .route("/lookup", get(api_capsule_lookup))
+        .route("/ingest/capsule", post(api_capsule_store))
+        .route("/capsules/purge", post(api_capsule_purge))
         .route("/scedge/status", get(api_scedge_status))
         .route("/scedge/lookup", get(api_scedge_lookup))
         .route("/scedge/store", post(api_scedge_store))
@@ -151,6 +156,30 @@ struct ApiMessage {
 struct ScedgeLookupQuery {
     key: String,
     tenant: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CapsuleLookupQuery {
+    key: String,
+    tenant: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CapsuleStoreBody {
+    #[serde(default)]
+    tenant: Option<String>,
+    #[serde(flatten)]
+    capsule: CapsuleIngestRequest,
+}
+
+#[derive(Debug, Deserialize)]
+struct CapsulePurgeBody {
+    #[serde(default)]
+    tenant: Option<String>,
+    #[serde(default)]
+    key: Option<String>,
+    #[serde(default)]
+    keys: Option<Vec<String>>,
 }
 
 async fn api_overview(State(state): State<HttpState>) -> Json<DashboardOverview> {
@@ -248,6 +277,167 @@ async fn api_purge(
     })
 }
 
+async fn api_capsule_lookup(
+    State(state): State<HttpState>,
+    Query(query): Query<CapsuleLookupQuery>,
+) -> Result<Json<CapsuleLookupResponse>, (StatusCode, Json<Value>)> {
+    let tenant_id = resolve_tenant(&state.cfg, query.tenant.as_deref());
+    let node = state
+        .ctx
+        .repos
+        .nodes
+        .get_by_key(tenant_id, &query.key)
+        .await
+        .map_err(internal_error)?
+        .ok_or_else(cache_miss)?;
+
+    let capsule = CapsuleLookupResponse::from_node(&node).map_err(internal_error)?;
+
+    if let Some(expected) = &query.tenant {
+        if capsule.artifact.policy.tenant != *expected {
+            return Err(cache_miss());
+        }
+    }
+
+    Ok(Json(capsule))
+}
+
+async fn api_capsule_store(
+    State(state): State<HttpState>,
+    Json(body): Json<CapsuleStoreBody>,
+) -> (StatusCode, Json<Value>) {
+    let CapsuleStoreBody { tenant, capsule } = body;
+
+    if let Some(expected) = tenant.as_ref() {
+        if capsule.artifact.policy.tenant != *expected {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "policy.tenant mismatch" })),
+            );
+        }
+    }
+
+    if capsule.artifact.policy.tenant.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "artifact.policy.tenant is required" })),
+        );
+    }
+
+    let tenant_id = resolve_tenant(&state.cfg, tenant.as_deref());
+    let existing_node = match state
+        .ctx
+        .repos
+        .nodes
+        .get_by_key(tenant_id, &capsule.key)
+        .await
+    {
+        Ok(node) => node,
+        Err(err) => return internal_error(err),
+    };
+    let response_capsule = capsule.clone();
+    let node = match capsule.into_node(tenant_id) {
+        Ok(node) => node,
+        Err(err) => return internal_error(err),
+    };
+
+    let existing_capsule = existing_node
+        .as_ref()
+        .and_then(|node| CapsuleLookupResponse::from_node(node).ok());
+
+    match state.ctx.repos.nodes.upsert(tenant_id, node).await {
+        Ok(outcome) => {
+            let status = match outcome {
+                UpsertOutcome::Created => "created",
+                UpsertOutcome::Updated => "updated",
+            };
+            if state.cfg.scedge_event_bus_enabled {
+                let tenant_slug = response_capsule.artifact.policy.tenant.clone();
+                let subject = state.cfg.scedge_event_bus_subject.clone();
+                let new_hash = response_capsule.artifact.hash.clone();
+                let event = if let (UpsertOutcome::Updated, Some(old_capsule)) =
+                    (outcome, existing_capsule)
+                {
+                    json!({
+                        "type": "SUPERSEDED_BY",
+                        "tenant": tenant_slug,
+                        "old_hash": old_capsule.artifact.hash,
+                        "new_hash": new_hash,
+                    })
+                } else {
+                    json!({
+                        "type": "UPSERT_NODE",
+                        "tenant": tenant_slug,
+                        "key": response_capsule.key,
+                        "hash": new_hash,
+                    })
+                };
+                publish_graph_event(&state, &subject, event).await;
+            }
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "status": status,
+                    "key": response_capsule.key,
+                    "hash": response_capsule.artifact.hash,
+                    "tenant": response_capsule.artifact.policy.tenant
+                })),
+            )
+        }
+        Err(err) => internal_error(err),
+    }
+}
+
+async fn api_capsule_purge(
+    State(state): State<HttpState>,
+    Json(body): Json<CapsulePurgeBody>,
+) -> (StatusCode, Json<Value>) {
+    let tenant_id = resolve_tenant(&state.cfg, body.tenant.as_deref());
+    let mut purged = 0_u32;
+    let mut revoked: Vec<String> = Vec::new();
+
+    let mut keys: Vec<String> = Vec::new();
+    if let Some(key) = body.key {
+        keys.push(key);
+    }
+    if let Some(list) = body.keys {
+        keys.extend(list.into_iter().filter(|k| !k.is_empty()));
+    }
+
+    for key in keys {
+        match state.ctx.repos.nodes.delete_by_key(tenant_id, &key).await {
+            Ok(Some(node)) => {
+                purged += 1;
+                if state.cfg.scedge_event_bus_enabled {
+                    if let Ok(capsule) = CapsuleLookupResponse::from_node(&node) {
+                        let tenant_slug = capsule.artifact.policy.tenant.clone();
+                        let hash = capsule.artifact.hash.clone();
+                        revoked.push(hash.clone());
+                        let event = json!({
+                            "type": "REVOKE_CAPSULE",
+                            "tenant": tenant_slug,
+                            "capsule_id": capsule.key,
+                            "hash": hash,
+                        });
+                        let subject = state.cfg.scedge_event_bus_subject.clone();
+                        publish_graph_event(&state, &subject, event).await;
+                    }
+                }
+            }
+            Ok(None) => {}
+            Err(err) => return internal_error(err),
+        }
+    }
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "purged": purged,
+            "revoked_hashes": revoked,
+        })),
+    )
+}
+
 async fn api_scedge_status(State(state): State<HttpState>) -> Json<ScedgeStatus> {
     Json(state.ctx.scedge.status().await)
 }
@@ -302,20 +492,52 @@ fn scedge_error_response(err: ScedgeError) -> (StatusCode, Json<Value>) {
     }
 }
 
+fn cache_miss() -> (StatusCode, Json<Value>) {
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({ "error": "cache miss" })),
+    )
+}
+
+fn internal_error<E: std::fmt::Display>(err: E) -> (StatusCode, Json<Value>) {
+    tracing::error!(error = %err, "capsule handler error");
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": err.to_string() })),
+    )
+}
+
+fn resolve_tenant(cfg: &AppConfig, slug: Option<&str>) -> Uuid {
+    if let Some(slug) = slug {
+        if let Some(uuid) = cfg.tenant_slugs.get(slug) {
+            return *uuid;
+        }
+    }
+    cfg.default_tenant_id
+}
+
+async fn publish_graph_event(state: &HttpState, subject: &str, payload: Value) {
+    if let Err(err) = state.ctx.repos.bus.publish(subject, &payload).await {
+        tracing::error!(error = %err, "failed to publish scedge graph event");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use axum::extract::State;
+    use std::collections::HashMap;
     use std::sync::Arc;
     use uuid::Uuid;
 
+    use crate::domain::capsule::{CapsuleArtifact, CapsuleIngestRequest, CapsulePolicy};
     use crate::repository::in_memory::{
         InMemoryBus, InMemoryCache, InMemoryEdgeRepository, InMemoryEmbeddingRepository,
         InMemoryNodeRepository, InMemoryOutboxRepository,
     };
     use crate::repository::RepositoryBundle;
-    use crate::state::AppContext;
-    use crate::state::DashboardHandle;
+    use crate::state::{AppContext, DashboardHandle};
+    use serde_json::json;
 
     fn sample_config() -> AppConfig {
         AppConfig {
@@ -326,6 +548,9 @@ mod tests {
             database_url: None,
             default_tenant_id: Uuid::new_v4(),
             scedge_base_url: None,
+            scedge_event_bus_enabled: false,
+            scedge_event_bus_subject: "scedge:events".into(),
+            tenant_slugs: HashMap::new(),
         }
     }
 
@@ -339,7 +564,7 @@ mod tests {
             Arc::new(InMemoryCache::default()),
             Arc::new(InMemoryBus::default()),
         );
-        let dashboard = crate::state::DashboardHandle::new();
+        let dashboard = DashboardHandle::new();
         let scedge = crate::scedge::ScedgeBridge::new(None);
         let ctx = AppContext::new(repos, dashboard, scedge);
         HttpState { cfg, ctx }
@@ -359,5 +584,158 @@ mod tests {
         let Json(response) = ready_handler(State(state)).await;
         assert!(response.ready);
         assert!(response.storage_ok);
+    }
+
+    #[tokio::test]
+    async fn capsule_store_persists_payload() {
+        let state = sample_state();
+        let repos = state.ctx.repos.clone();
+        let tenant = state.cfg.default_tenant_id;
+
+        let payload = serde_json::from_value::<CapsuleStoreBody>(json!({
+            "tenant": "acme",
+            "key": "acme:analytics:report",
+            "artifact": {
+                "answer": "Quarterly revenue was up 23%.",
+                "policy": {
+                    "tenant": "acme",
+                    "phi": false,
+                    "pii": false,
+                    "region": null,
+                    "compliance_tags": []
+                },
+                "provenance": [
+                    {"source": "synagraph:artifact", "hash": "sg-123", "version": "v1"}
+                ],
+                "hash": "sg-123",
+                "ttl_seconds": 3600
+            }
+        }))
+        .unwrap();
+
+        let (status, Json(resp)) = api_capsule_store(State(state), Json(payload)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(resp["status"], "created");
+
+        let stored = repos
+            .nodes
+            .get_by_key(tenant, "acme:analytics:report")
+            .await
+            .unwrap();
+        assert!(stored.is_some());
+    }
+
+    #[tokio::test]
+    async fn capsule_lookup_hits_cache() {
+        let state = sample_state();
+        let tenant = state.cfg.default_tenant_id;
+        let repos = state.ctx.repos.clone();
+
+        let capsule = CapsuleIngestRequest {
+            key: "acme:analytics:report".into(),
+            artifact: CapsuleArtifact {
+                answer: json!("Quarterly revenue was up 23%."),
+                policy: CapsulePolicy {
+                    tenant: "acme".into(),
+                    phi: false,
+                    pii: false,
+                    region: None,
+                    compliance_tags: vec![],
+                },
+                provenance: vec![serde_json::from_value(json!({
+                    "source": "synagraph:artifact",
+                    "hash": "sg-123",
+                    "version": "v1"
+                }))
+                .unwrap()],
+                metrics: None,
+                ttl_seconds: Some(3600),
+                hash: "sg-123".into(),
+                metadata: None,
+            },
+            expires_at: None,
+        };
+
+        let node = capsule.clone().into_node(tenant).unwrap();
+        repos.nodes.upsert(tenant, node).await.unwrap();
+
+        let query = CapsuleLookupQuery {
+            key: "acme:analytics:report".into(),
+            tenant: Some("acme".into()),
+        };
+
+        let Json(response) = api_capsule_lookup(State(state), Query(query))
+            .await
+            .unwrap();
+
+        assert_eq!(response.key, "acme:analytics:report");
+        assert_eq!(response.artifact.hash, "sg-123");
+        assert_eq!(response.artifact.policy.tenant, "acme");
+        assert!(response.ttl_remaining_seconds.is_some());
+    }
+
+    #[tokio::test]
+    async fn capsule_lookup_miss_returns_404() {
+        let state = sample_state();
+        let query = CapsuleLookupQuery {
+            key: "missing".into(),
+            tenant: None,
+        };
+
+        let err = api_capsule_lookup(State(state), Query(query))
+            .await
+            .unwrap_err();
+        assert_eq!(err.0, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn capsule_purge_removes_records() {
+        let state = sample_state();
+        let repos = state.ctx.repos.clone();
+        let tenant = state.cfg.default_tenant_id;
+
+        let capsule = CapsuleIngestRequest {
+            key: "acme:analytics:report".into(),
+            artifact: CapsuleArtifact {
+                answer: json!("Quarterly revenue was up 23%"),
+                policy: CapsulePolicy {
+                    tenant: "acme".into(),
+                    phi: false,
+                    pii: false,
+                    region: None,
+                    compliance_tags: vec![],
+                },
+                provenance: vec![serde_json::from_value(json!({
+                    "source": "synagraph:artifact",
+                    "hash": "sg-123"
+                }))
+                .unwrap()],
+                metrics: None,
+                ttl_seconds: Some(3600),
+                hash: "sg-123".into(),
+                metadata: None,
+            },
+            expires_at: None,
+        };
+
+        let node = capsule.clone().into_node(tenant).unwrap();
+        repos.nodes.upsert(tenant, node).await.unwrap();
+
+        let payload = CapsulePurgeBody {
+            tenant: Some("acme".into()),
+            key: Some("acme:analytics:report".into()),
+            keys: None,
+        };
+
+        let (status, Json(resp)) = api_capsule_purge(State(state), Json(payload)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(resp["purged"], 1);
+
+        let remaining = repos
+            .nodes
+            .get_by_key(tenant, "acme:analytics:report")
+            .await
+            .unwrap();
+        assert!(remaining.is_none());
     }
 }

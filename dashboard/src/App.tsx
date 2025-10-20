@@ -12,7 +12,6 @@ import {
   hybridSearch,
   HybridSearchResponse,
   ingestCapsule,
-  CapsuleIngestResponse,
   purgeArtifacts,
   fetchNeighbors,
   lookupNode,
@@ -25,24 +24,22 @@ import {
   fetchScedgeStatus,
   scedgeLookup,
   scedgeStore,
-  scedgePurge,
   ScedgeStatusResponse,
   ScedgeActionResponse,
+  capsulePurge,
 } from './api';
 
 type PrimaryTab = 'graph' | 'scedge' | 'upsert' | 'search' | 'edges' | 'events';
 
-type ExplorerStatus = {
-  message: string;
-  tone: 'success' | 'error';
-} | null;
+type ToastTone = 'success' | 'error';
 
-type Flash = {
+type Toast = {
+  id: number;
   message: string;
-  tone: 'success' | 'error';
+  tone: ToastTone;
   detail?: string;
   dismissible?: boolean;
-} | null;
+};
 
 type EventTone = 'event-success' | 'event-warning' | 'event-danger' | 'event-neutral';
 
@@ -88,7 +85,7 @@ const DEFAULT_SCEDGE_STORE = `{
   }
 }`;
 
-const DEFAULT_SCEDGE_PURGE = `{
+const DEFAULT_CAPSULE_PURGE = `{
   "tenant": "acme",
   "key": "acme:analytics:report"
 }`;
@@ -196,18 +193,25 @@ function describeError(err: unknown): string {
   return String(err ?? 'Unknown error');
 }
 
-function FlashBanner({ flash, onDismiss }: { flash: NonNullable<Flash>; onDismiss: () => void }) {
+function ToastStack({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: number) => void }) {
+  if (toasts.length === 0) {
+    return null;
+  }
   return (
-    <div className={`flash-banner flash-${flash.tone}`} role={flash.tone === 'error' ? 'alert' : 'status'}>
-      <div className="flash-content">
-        <span>{flash.message}</span>
-        {flash.detail && <span className="flash-detail">{flash.detail}</span>}
-      </div>
-      {flash.dismissible !== false && (
-        <button type="button" className="flash-dismiss" onClick={onDismiss} aria-label="Dismiss banner">
-          ×
-        </button>
-      )}
+    <div className="toast-stack">
+      {toasts.map((toast) => (
+        <div key={toast.id} className={`toast toast-${toast.tone}`} role={toast.tone === 'error' ? 'alert' : 'status'}>
+          <div className="toast-content">
+            <span>{toast.message}</span>
+            {toast.detail && <span className="toast-detail">{toast.detail}</span>}
+          </div>
+          {toast.dismissible !== false && (
+            <button type="button" className="toast-dismiss" onClick={() => onDismiss(toast.id)} aria-label="Dismiss notification">
+              ×
+            </button>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -220,7 +224,7 @@ export default function App() {
   const [overview, setOverview] = useState<OverviewResponse | null>(null);
   const [history, setHistory] = useState<HistoryEvent[]>([]);
   const [tenantId, setTenantId] = useState('');
-  const [flash, setFlash] = useState<Flash>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
   const [focusedAction, setFocusedAction] = useState<'decay' | 'emit' | 'capsule' | null>(null);
 
   const [nodeForm, setNodeForm] = useState({
@@ -254,10 +258,11 @@ export default function App() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchResult, setSearchResult] = useState<HybridSearchResponse | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [quickSearch, setQuickSearch] = useState('');
 
   const [capsuleForm, setCapsuleForm] = useState({ capsule: DEFAULT_CAPSULE, unwrap: true });
   const [capsuleLoading, setCapsuleLoading] = useState(false);
-  const [capsuleResult, setCapsuleResult] = useState<CapsuleIngestResponse | null>(null);
+  const [capsuleResult, setCapsuleResult] = useState<ScedgeActionResponse | null>(null);
 
   const [decayForm, setDecayForm] = useState({ nodeId: '', lambda: '0.25', reinforce: false });
   const [decayLoading, setDecayLoading] = useState(false);
@@ -281,19 +286,17 @@ export default function App() {
   const [scedgeStoreResult, setScedgeStoreResult] = useState<ScedgeActionResponse | null>(null);
   const [scedgeStoreLoading, setScedgeStoreLoading] = useState(false);
   const [scedgeStoreError, setScedgeStoreError] = useState<string | null>(null);
-  const [scedgePurgeBody, setScedgePurgeBody] = useState(DEFAULT_SCEDGE_PURGE);
-  const [scedgePurgeResult, setScedgePurgeResult] = useState<ScedgeActionResponse | null>(null);
-  const [scedgePurgeLoading, setScedgePurgeLoading] = useState(false);
-  const [scedgePurgeError, setScedgePurgeError] = useState<string | null>(null);
+  const [capsulePurgeBody, setCapsulePurgeBody] = useState(DEFAULT_CAPSULE_PURGE);
+  const [capsulePurgeResult, setCapsulePurgeResult] = useState<ScedgeActionResponse | null>(null);
+  const [capsulePurgeLoading, setCapsulePurgeLoading] = useState(false);
+  const [capsulePurgeError, setCapsulePurgeError] = useState<string | null>(null);
 
   const [nodeLookupId, setNodeLookupId] = useState('');
   const [nodeDetail, setNodeDetail] = useState<GraphNode | null>(null);
-  const [nodeExplorerStatus, setNodeExplorerStatus] = useState<ExplorerStatus>(null);
   const [nodeLookupLoading, setNodeLookupLoading] = useState(false);
 
   const [neighborLookupId, setNeighborLookupId] = useState('');
   const [neighborResult, setNeighborResult] = useState<NeighborsResponse | null>(null);
-  const [neighborStatus, setNeighborStatus] = useState<ExplorerStatus>(null);
   const [neighborLookupLoading, setNeighborLookupLoading] = useState(false);
 
   useEffect(() => {
@@ -304,16 +307,7 @@ export default function App() {
   const handleRefreshError = (err: unknown) => {
     console.error(err);
     const detail = describeError(err);
-    setFlash((prev) =>
-      prev?.tone === 'success'
-        ? prev
-        : {
-            tone: 'error',
-            message: 'Failed to load dashboard data. Ensure the SynaGraph API is running (e.g., `cargo run`).',
-            detail,
-            dismissible: true,
-          },
-    );
+    setErrorToast('Failed to load dashboard data. Ensure the SynaGraph API is running (e.g., `cargo run`).', detail);
   };
 
   const refresh = async (options?: { silent?: boolean }) => {
@@ -321,9 +315,6 @@ export default function App() {
       const [ov, hist] = await Promise.all([fetchOverview(), fetchHistory()]);
       setOverview(ov);
       setHistory(hist);
-      if (!options?.silent) {
-        setFlash((prev) => (prev && prev.tone === 'error' ? null : prev));
-      }
     } catch (err) {
       if (!options?.silent) {
         handleRefreshError(err);
@@ -334,7 +325,7 @@ export default function App() {
 
   useEffect(() => {
     refresh().catch(() => {
-      /* handled via flash */
+      /* handled via toast */
     });
   }, []);
 
@@ -385,8 +376,41 @@ export default function App() {
 
   const provenanceJson = useMemo(() => toPrettyJson(nodeDetail?.provenance), [nodeDetail]);
 
-  const setSuccessFlash = (message: string) => setFlash({ tone: 'success', message, dismissible: true });
-  const setErrorFlash = (message: string, detail?: string) => setFlash({ tone: 'error', message, detail, dismissible: true });
+  const pushToast = useCallback(
+    (toast: Omit<Toast, 'id'> & { durationMs?: number }) => {
+      const id = Date.now() + Math.random();
+      setToasts((prev) => [...prev, { id, ...toast }]);
+      const duration = toast.durationMs ?? 5000;
+      if (duration > 0) {
+        window.setTimeout(() => {
+          setToasts((prev) => prev.filter((entry) => entry.id !== id));
+        }, duration);
+      }
+    },
+    [],
+  );
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts((prev) => prev.filter((toast) => toast.id !== id));
+  }, []);
+
+  const clearToasts = useCallback(() => {
+    setToasts([]);
+  }, []);
+
+  const setSuccessFlash = useCallback(
+    (message: string) => {
+      pushToast({ tone: 'success', message });
+    },
+    [pushToast],
+  );
+
+  const setErrorFlash = useCallback(
+    (message: string, detail?: string) => {
+      pushToast({ tone: 'error', message, detail, dismissible: true, durationMs: detail ? 8000 : 6000 });
+    },
+    [pushToast],
+  );
 
   const loadScedgeStatus = useCallback(async () => {
     try {
@@ -412,7 +436,7 @@ export default function App() {
   const handleUpsertSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setUpsertLoading(true);
-    setFlash(null);
+    clearToasts();
     try {
       const payload = parseJsonInput('payload', nodeForm.payload, true);
       const embedding = parseEmbedding(nodeForm.embedding);
@@ -441,7 +465,7 @@ export default function App() {
   const handleEdgeSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setEdgeLoading(true);
-    setFlash(null);
+    clearToasts();
     try {
       if (!edgeForm.fromId.trim() || !edgeForm.toId.trim()) {
         throw new Error('Both source and target node IDs are required');
@@ -469,42 +493,49 @@ export default function App() {
     }
   };
 
+  const performHybridSearch = useCallback(
+    async (form: typeof searchForm) => {
+      setSearchLoading(true);
+      setSearchError(null);
+      clearToasts();
+      try {
+        if (!form.queryText.trim() && !form.queryVector.trim()) {
+          throw new Error('Provide hybrid search text and/or vector payload');
+        }
+        const queryVector = parseEmbedding(form.queryVector || '');
+        const filter = parseJsonInput('filter', form.filter);
+        const topK = parseOptionalNumber('top-k', form.topK) ?? 8;
+        const result = await hybridSearch({
+          tenantId: tenantOrUndefined,
+          queryText: form.queryText.trim() || undefined,
+          queryVector,
+          topK,
+          filter,
+        });
+        setSearchResult(result);
+        setSuccessFlash(`Hybrid search returned ${result.results.length} result${result.results.length === 1 ? '' : 's'}`);
+        await refresh({ silent: true }).catch(handleRefreshError);
+      } catch (err) {
+        console.error(err);
+        const message = err instanceof Error ? err.message : 'Hybrid search failed';
+        setSearchError(message);
+        setErrorFlash(message);
+      } finally {
+        setSearchLoading(false);
+      }
+    },
+    [clearToasts, handleRefreshError, hybridSearch, tenantOrUndefined, setSuccessFlash, setErrorFlash],
+  );
+
   const handleSearchSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setSearchLoading(true);
-    setSearchError(null);
-    setFlash(null);
-    try {
-      if (!searchForm.queryText.trim() && !searchForm.queryVector.trim()) {
-        throw new Error('Provide hybrid search text and/or vector payload');
-      }
-      const queryVector = parseEmbedding(searchForm.queryVector || '');
-      const filter = parseJsonInput('filter', searchForm.filter);
-      const topK = parseOptionalNumber('top-k', searchForm.topK) ?? 8;
-      const result = await hybridSearch({
-        tenantId: tenantOrUndefined,
-        queryText: searchForm.queryText.trim() || undefined,
-        queryVector,
-        topK,
-        filter,
-      });
-      setSearchResult(result);
-      setSuccessFlash(`Hybrid search returned ${result.results.length} result${result.results.length === 1 ? '' : 's'}`);
-      await refresh({ silent: true }).catch(handleRefreshError);
-    } catch (err) {
-      console.error(err);
-      const message = err instanceof Error ? err.message : 'Hybrid search failed';
-      setSearchError(message);
-      setErrorFlash(message);
-    } finally {
-      setSearchLoading(false);
-    }
+    await performHybridSearch(searchForm);
   };
 
   const handleCapsuleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setCapsuleLoading(true);
-    setFlash(null);
+    clearToasts();
     try {
       const capsule = parseJsonInput('capsule', capsuleForm.capsule, true);
       const response = await ingestCapsule({
@@ -513,13 +544,13 @@ export default function App() {
         unwrap: capsuleForm.unwrap,
       });
       setCapsuleResult(response);
-      setSuccessFlash(
-        `Capsule ${response.capsule_id} ingested (${response.upserted_nodes.length} node${
-          response.upserted_nodes.length === 1 ? '' : 's'
-        })`,
-      );
       setFocusedAction('capsule');
-      await refresh({ silent: true }).catch(handleRefreshError);
+      if (response.ok) {
+        setSuccessFlash('Capsule ingested');
+        await loadScedgeStatus();
+      } else {
+        setErrorFlash(`Capsule request returned ${response.status}`, formatUnknown(response.body));
+      }
     } catch (err) {
       console.error(err);
       setErrorFlash(err instanceof Error ? err.message : 'Capsule ingest failed');
@@ -531,7 +562,7 @@ export default function App() {
   const handleDecaySubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setDecayLoading(true);
-    setFlash(null);
+    clearToasts();
     try {
       const lambda = parseOptionalNumber('decay λ', decayForm.lambda);
       const response = await triggerDecay({
@@ -555,7 +586,7 @@ export default function App() {
   const handleEmitEventSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setEventLoading(true);
-    setFlash(null);
+    clearToasts();
     try {
       const detail = parseJsonInput('event detail', eventForm.detail, true);
       const response = await emitTestEvent({
@@ -616,43 +647,45 @@ export default function App() {
     }
   };
 
-  const handleScedgePurge = async (event: FormEvent<HTMLFormElement>) => {
+  const handleCapsulePurge = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setScedgePurgeLoading(true);
-    setScedgePurgeError(null);
+    setCapsulePurgeLoading(true);
+    setCapsulePurgeError(null);
     try {
-      const payload = parseJsonInput('Scedge purge payload', scedgePurgeBody, true);
-      const result = await scedgePurge(payload);
-      setScedgePurgeResult(result);
+      const payload = parseJsonInput('Capsule purge payload', capsulePurgeBody, true);
+      const result = await capsulePurge(payload);
+      setCapsulePurgeResult(result);
+      setFocusedAction('capsule');
+      if (result.ok) {
+        setSuccessFlash('Capsule purge acknowledged');
+      } else {
+        setErrorFlash(`Purge returned ${result.status}`, formatUnknown(result.body));
+      }
       await loadScedgeStatus();
     } catch (err) {
       console.error(err);
-      setScedgePurgeResult(null);
-      setScedgePurgeError(err instanceof Error ? err.message : 'Purge failed');
+      setCapsulePurgeResult(null);
+      setCapsulePurgeError(err instanceof Error ? err.message : 'Purge failed');
     } finally {
-      setScedgePurgeLoading(false);
+      setCapsulePurgeLoading(false);
     }
   };
 
   const handleNodeLookup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!nodeLookupId.trim()) {
-      setNodeExplorerStatus({ tone: 'error', message: 'Provide a node ID' });
+      setErrorFlash('Provide a node ID to lookup');
       return;
     }
     setNodeLookupLoading(true);
-    setNodeExplorerStatus(null);
     try {
       const node = await lookupNode({ nodeId: nodeLookupId.trim(), tenantId: tenantOrUndefined });
       setNodeDetail(node);
-      setNodeExplorerStatus({ tone: 'success', message: `Fetched node ${node.node_id}` });
+      setSuccessFlash(`Fetched node ${node.node_id}`);
     } catch (err) {
       console.error(err);
       setNodeDetail(null);
-      setNodeExplorerStatus({
-        tone: 'error',
-        message: err instanceof Error ? err.message : 'Lookup failed',
-      });
+      setErrorFlash('Lookup failed', err instanceof Error ? err.message : undefined);
     } finally {
       setNodeLookupLoading(false);
     }
@@ -661,32 +694,26 @@ export default function App() {
   const handleNeighborLookup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!neighborLookupId.trim()) {
-      setNeighborStatus({ tone: 'error', message: 'Provide a node ID' });
+      setErrorFlash('Provide a node ID to fetch neighbors');
       return;
     }
     setNeighborLookupLoading(true);
-    setNeighborStatus(null);
     try {
       const result = await fetchNeighbors({ nodeId: neighborLookupId.trim(), tenantId: tenantOrUndefined });
       setNeighborResult(result);
-      setNeighborStatus({
-        tone: 'success',
-        message: `Retrieved ${result.neighbors.length} neighbor${result.neighbors.length === 1 ? '' : 's'}`,
-      });
+      const message = `Retrieved ${result.neighbors.length} neighbor${result.neighbors.length === 1 ? '' : 's'}`;
+      setSuccessFlash(message);
     } catch (err) {
       console.error(err);
       setNeighborResult(null);
-      setNeighborStatus({
-        tone: 'error',
-        message: err instanceof Error ? err.message : 'Neighbor lookup failed',
-      });
+      setErrorFlash('Neighbor lookup failed', err instanceof Error ? err.message : undefined);
     } finally {
       setNeighborLookupLoading(false);
     }
   };
 
   const handlePurge = async () => {
-    setFlash(null);
+    clearToasts();
     try {
       const response = await purgeArtifacts(tenantOrUndefined, 'dashboard purge');
       setSuccessFlash(response.message || 'Purge request submitted');
@@ -843,9 +870,6 @@ export default function App() {
                 {nodeLookupLoading ? 'Fetching…' : 'Fetch node'}
               </button>
             </form>
-            {nodeExplorerStatus && (
-              <div className={`status status-${nodeExplorerStatus.tone}`}>{nodeExplorerStatus.message}</div>
-            )}
             {nodeDetail && (
               <div className="data-preview">
                 <div className="preview-header">
@@ -872,7 +896,6 @@ export default function App() {
                 {neighborLookupLoading ? 'Fetching…' : 'Fetch neighbors'}
               </button>
             </form>
-            {neighborStatus && <div className={`status status-${neighborStatus.tone}`}>{neighborStatus.message}</div>}
             {neighborResult && (
               <div className="neighbor-summary">
                 <div>
@@ -1089,27 +1112,27 @@ export default function App() {
           <div className="panel-header">
             <h2>Purge Cache</h2>
           </div>
-          <form className="operation-form" onSubmit={handleScedgePurge}>
+          <form className="operation-form" onSubmit={handleCapsulePurge}>
             <label className="field">
               <span>Payload JSON</span>
               <textarea
                 rows={6}
-                value={scedgePurgeBody}
-                onChange={(e) => setScedgePurgeBody(e.target.value)}
+                value={capsulePurgeBody}
+                onChange={(e) => setCapsulePurgeBody(e.target.value)}
               />
             </label>
-            <button className="secondary" type="submit" disabled={scedgePurgeLoading}>
-              {scedgePurgeLoading ? 'Purging…' : 'Purge'}
+            <button className="secondary" type="submit" disabled={capsulePurgeLoading}>
+              {capsulePurgeLoading ? 'Purging…' : 'Purge'}
             </button>
           </form>
-          {scedgePurgeError && <div className="status status-error">{scedgePurgeError}</div>}
-          {scedgePurgeResult && (
+          {capsulePurgeError && <div className="status status-error">{capsulePurgeError}</div>}
+          {capsulePurgeResult && (
             <div className="data-preview">
               <div className="preview-header">
                 <span className="pill">Purge response</span>
-                <span className="preview-id">Status {scedgePurgeResult.status}</span>
+                <span className="preview-id">Status {capsulePurgeResult.status}</span>
               </div>
-              <pre className="code-block">{formatUnknown(scedgePurgeResult.body)}</pre>
+              <pre className="code-block">{formatUnknown(capsulePurgeResult.body)}</pre>
             </div>
           )}
         </article>
@@ -1335,9 +1358,9 @@ export default function App() {
           <div className="data-preview">
             <div className="preview-header">
               <span className="pill">Capsule ingest</span>
-              <span className="preview-id">{capsuleResult.capsule_id}</span>
+              <span className="preview-id">Status {capsuleResult.status}</span>
             </div>
-            <pre className="code-block">{JSON.stringify(capsuleResult, null, 2)}</pre>
+            <pre className="code-block">{formatUnknown(capsuleResult.body)}</pre>
           </div>
         )}
       </article>
@@ -1485,6 +1508,8 @@ export default function App() {
 
   return (
     <div className="dashboard">
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
+
       <header className="topbar">
         <div className="brand">
           <span className="brand-icon" aria-hidden="true">
@@ -1551,7 +1576,6 @@ export default function App() {
       </header>
 
       <main className="layout">
-        {flash && <FlashBanner flash={flash} onDismiss={() => setFlash(null)} />}
 
         <section id="overview" className="metrics">
           {metrics.map((metric) => (

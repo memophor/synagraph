@@ -190,7 +190,7 @@ Default host bindings:
 |-------------|-----------|------|
 | PostgreSQL  | 5432      | 5435 |
 | NATS        | 4222      | 4222 |
-| SynaGraph   | 8080      | 8081 |
+| SynaGraph   | 8080      | 8080 |
 
 If any host port is busy, edit `docker-compose.synagraph.yml` before bringing the stack up.
 The `pg-init/001_pgvector.sql` bootstrap script enables the `vector` extension automatically on first boot.
@@ -198,13 +198,13 @@ The `pg-init/001_pgvector.sql` bootstrap script enables the `vector` extension a
 Smoke test:
 
 ```bash
-curl http://localhost:8081/health
-curl -s -X POST http://localhost:8081/api/operations/store \
+curl http://localhost:8080/health
+curl -s -X POST http://localhost:8080/api/operations/store \
   -H 'content-type: application/json' \
   -d '{"kind":"note","payload":{"title":"Q4 Summary","summary":"Revenue +23%"}}'
 ```
 
-The dashboard will be available at <http://localhost:8081/dashboard>. Shut the stack down with `docker compose -f docker-compose.synagraph.yml down` and remove the volume (`docker volume rm synagraph_pgdata`) if you need a clean database.
+The dashboard will be available at <http://localhost:8080/dashboard>. Shut the stack down with `docker compose -f docker-compose.synagraph.yml down` and remove the volume (`docker volume rm synagraph_pgdata`) if you need a clean database.
 
 When integrating Scedge, attach its container to the same network:
 
@@ -222,6 +222,54 @@ Set `SCEDGE_BASE_URL` to the reachable Scedge Core endpoint (for example, `http:
 
 If the variable is unset the tab remains disabled and the proxy endpoints return `503 Service Unavailable`.
 
+> Inside the shared Docker network, Scedge reaches SynaGraph at `http://synagraph:8080/lookup` (the service name and internal port remain stable even if host mappings change).
+
+### Lookup API Contract
+
+SynaGraph now exposes a tenant-aware capsule endpoint that Scedge calls on cache misses:
+
+```bash
+curl "http://localhost:8080/lookup?tenant=acme&key=acme:analytics:report"
+```
+
+Successful responses follow Scedge’s schema exactly:
+
+```json
+{
+  "key": "acme:analytics:report",
+  "artifact": {
+    "answer": "Quarterly revenue was up 23%.",
+    "policy": {
+      "tenant": "acme",
+      "phi": false,
+      "pii": false,
+      "region": null,
+      "compliance_tags": []
+    },
+    "provenance": [
+      {
+        "source": "synagraph:artifact",
+        "hash": "sg-123",
+        "version": "v1",
+        "generated_at": null
+      }
+    ],
+    "metrics": null,
+    "ttl_seconds": 3600,
+    "hash": "sg-123",
+    "metadata": null
+  },
+  "expires_at": "2025-10-20T03:12:34.000000Z",
+  "ttl_remaining_seconds": 3480
+}
+```
+
+- `tenant` is optional. If present, SynaGraph resolves the slug via `TENANT_SLUGS` and enforces a match against `artifact.policy.tenant`.
+- Returns `404 {"error":"cache miss"}` when no capsule exists. Scedge treats this as a miss and rehydrates.
+- Capsules can be ingested via `POST /ingest/capsule` with the same structure (optionally including a top-level `tenant` hint). SynaGraph stores the payload, derives a stable hash, and records provenance.
+- Enable `SCEDGE_EVENT_BUS_ENABLED=true` to publish GraphEvents (subject defaults to `scedge:events`) so Scedge can invalidate cached entries. Writes emit `UPSERT_NODE`/`SUPERSEDED_BY`; `/capsules/purge` emits `REVOKE_CAPSULE` with the capsule key and hash.
+- `POST /capsules/purge` accepts `{"tenant":"acme","key":"…"}` or `{"keys":[…]}` and deletes capsules from SynaGraph while emitting the corresponding GraphEvents.
+
 ---
 
 ## 🔧 Configuration
@@ -237,6 +285,9 @@ Configure via environment variables (see [.env.example](.env.example)):
 | `POSTGRES_PORT` | `55432` | Docker Compose PostgreSQL port |
 | `REDIS_PORT` | `6379` | Docker Compose Redis port |
 | `SCEDGE_BASE_URL` | unset | Optional Scedge Core API base URL (e.g., `http://scedge:8082`) enabling dashboard monitoring |
+| `SCEDGE_EVENT_BUS_ENABLED` | `false` | Publish GraphEvents to NATS when capsules change |
+| `SCEDGE_EVENT_BUS_SUBJECT` | `scedge:events` | NATS subject used for GraphEvents |
+| `TENANT_SLUGS` | unset | Comma-separated `slug=UUID` pairs for resolving tenant query params |
 
 ---
 

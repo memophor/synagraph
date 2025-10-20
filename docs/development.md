@@ -51,8 +51,17 @@ docker network create memonet        # one-time setup
 docker compose -f docker-compose.synagraph.yml up -d --build
 ```
 
-The compose file exposes Postgres on `localhost:5435`, NATS on `localhost:4222`, and the SynaGraph HTTP API on `localhost:8081`. Adjust the port mappings in `docker-compose.synagraph.yml` if they conflict on your machine. Point `DATABASE_URL` at `postgres://postgres:postgres@localhost:5435/synagraph` when running tests against the containerized database.
+The compose file exposes Postgres on `localhost:5435`, NATS on `localhost:4222`, and the SynaGraph HTTP API on `localhost:8080`. Adjust the port mappings in `docker-compose.synagraph.yml` if they conflict on your machine. Point `DATABASE_URL` at `postgres://postgres:postgres@localhost:5435/synagraph` when running tests against the containerized database.
 Set `SCEDGE_BASE_URL` to the Scedge Core endpoint (for example, `http://localhost:8082` or `http://scedge:8082` when running inside the shared `memonet` network) to enable dashboard observability and cache controls.
+Set `SCEDGE_EVENT_BUS_ENABLED=true` (optionally overriding `SCEDGE_EVENT_BUS_SUBJECT`) if you want SynaGraph to emit GraphEvents on capsule writes/purges. Configure `TENANT_SLUGS` as `slug=uuid` entries (comma separated) so HTTP requests such as `tenant=acme` resolve to the correct UUID.
+
+Once the stack is running you can exercise the lookup contract directly:
+
+```bash
+curl "http://localhost:8080/lookup?tenant=acme&key=acme:analytics:report"
+```
+
+Populate capsules via `POST /ingest/capsule` using the same JSON shape that Scedge stores. A miss returns `404 {"error":"cache miss"}`; Scedge treats this as a signal to hydrate from SynaGraph and caches the result downstream.
 
 For the dashboard UI:
 

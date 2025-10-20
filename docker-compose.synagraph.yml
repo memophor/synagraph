@@ -39,8 +39,10 @@ services:
       SYNAGRAPH_HTTP_PORT: "8080"
       SYNAGRAPH_VECTOR_DIM: "1536"
       # SCEDGE_BASE_URL: http://scedge:8082
+      # SCEDGE_EVENT_BUS_ENABLED: "1"
+      # SCEDGE_EVENT_BUS_SUBJECT: scedge:events
     ports:
-      - "8081:8080"
+      - "8080:8080"
     networks:
       - memonet
 volumes:

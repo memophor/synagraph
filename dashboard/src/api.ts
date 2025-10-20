@@ -92,13 +92,6 @@ export interface CapsuleIngestRequest {
   unwrap?: boolean;
 }
 
-export interface CapsuleIngestResponse {
-  capsule_id: string;
-  upserted_nodes: string[];
-  events: HistoryEvent[];
-  message?: string;
-}
-
 export interface DecayRequest {
   tenantId?: string;
   nodeId?: string;
@@ -259,7 +252,7 @@ export const hybridSearch = (body: HybridSearchRequest) =>
   });
 
 export const ingestCapsule = (body: CapsuleIngestRequest) =>
-  api<CapsuleIngestResponse>('/api/ingest/capsule', {
+  fetchWithStatus('/api/ingest/capsule', {
     method: 'POST',
     body: JSON.stringify({
       tenant_id: body.tenantId,
@@ -313,6 +306,12 @@ export const scedgeStore = (payload: unknown) =>
 
 export const scedgePurge = (payload: unknown) =>
   fetchWithStatus('/api/scedge/purge', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+export const capsulePurge = (payload: unknown) =>
+  fetchWithStatus('/api/capsules/purge', {
     method: 'POST',
     body: JSON.stringify(payload),
   });

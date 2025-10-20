@@ -129,6 +129,7 @@ mod tests {
     };
     use crate::repository::RepositoryBundle;
     use crate::state::{AppContext, DashboardHandle};
+    use std::collections::HashMap;
     use std::sync::Arc;
     use tonic::Request;
     use uuid::Uuid;
@@ -162,6 +163,9 @@ mod tests {
             database_url: None,
             default_tenant_id: tenant,
             scedge_base_url: None,
+            scedge_event_bus_enabled: false,
+            scedge_event_bus_subject: "scedge:events".into(),
+            tenant_slugs: HashMap::new(),
         };
 
         let repos = RepositoryBundle::new(
