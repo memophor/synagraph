@@ -28,6 +28,8 @@ uuid = { version = "1", features = ["serde", "v4"], default-features = false }
 async-trait = "0.1"
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "json", "chrono", "migrate"] }
 chrono = { version = "0.4", features = ["serde", "clock"] }
+tower-http = { version = "0.5", features = ["fs"] }
+parking_lot = "0.12"
 
 [build-dependencies]
 prost-build = "0.12"

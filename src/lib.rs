@@ -7,3 +7,4 @@ pub mod pb;
 pub mod repository;
 pub mod server;
 pub mod telemetry;
+pub mod state;

@@ -8,11 +8,11 @@ use anyhow::Result;
 use tokio::try_join;
 
 use crate::config::AppConfig;
-use crate::repository::RepositoryBundle;
+use crate::state::AppContext;
 
-pub async fn run(cfg: AppConfig, repos: RepositoryBundle) -> Result<()> {
-    let http_future = http::serve(cfg.clone(), repos.clone());
-    let grpc_future = grpc::serve(cfg.clone(), repos);
+pub async fn run(cfg: AppConfig, ctx: AppContext) -> Result<()> {
+    let http_future = http::serve(cfg.clone(), ctx.clone());
+    let grpc_future = grpc::serve(cfg.clone(), ctx);
 
     try_join!(http_future, grpc_future)?;
 
